@@ -22,12 +22,12 @@ cd .. && rm -rf tlsh
 # bitshred
 # export DOCKER_BUILDKIT=1
 RUN mkdir ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
-RUN --mount=type=ssh git clone git@github.com:im-overlord04/bitshred-python.git ~/bitshred
-
+RUN --mount=type=ssh git clone git@github.com:im-overlord04/bitshred-python.git && mv bitshred-python/bitshred-python bitshred && rm -rf bitshred-python
+RUN ls bitshred
 # mrsh-v2
 
 RUN wget https://www.fbreitinger.de/wp-content/uploads/2018/07/mrsh_v2.0.zip && unzip mrsh_v2.0.zip && cd mrsh_v2.0 &&\
-    make && cp mrsh /usr/bin && cd .. rm -rf mrsh_v2.0 && rm mrsh_v2.0.zip
+    make && cp mrsh /usr/bin && cd .. && rm -rf mrsh_v2.0 && rm mrsh_v2.0.zip
 
 # pefile
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
