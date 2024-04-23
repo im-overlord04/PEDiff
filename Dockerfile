@@ -1,5 +1,3 @@
-# export DOCKER_BUILDKIT=1
-
 FROM ubuntu:22.04
 
 RUN apt update && apt install --no-install-recommends -y wget git automake libtool make cmake gcc g++ pkg-config libmagic-dev curl \
@@ -18,11 +16,11 @@ RUN git clone https://github.com/sdhash/sdhash.git && cd sdhash && make && make 
 RUN git clone https://github.com/trendmicro/tlsh.git && \
 cd tlsh && \
 git checkout master && \
-./make.sh && \
+./make.sh && cp bin/tlsh_unittest /usr/bin/tlsh && \
 cd .. && rm -rf tlsh
 
 # bitshred
-
+# export DOCKER_BUILDKIT=1
 RUN mkdir ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
 RUN --mount=type=ssh git clone git@github.com:im-overlord04/bitshred-python.git ~/bitshred
 
@@ -33,6 +31,10 @@ RUN wget https://www.fbreitinger.de/wp-content/uploads/2018/07/mrsh_v2.0.zip && 
 
 # pefile
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
+COPY install_pefile.sh install_pefile.sh
+RUN ./install_pefile.sh
 
-RUN pip install pefile && wget -O /usr/local/lib/python3.10/dist-packages/pefile.py https://raw.githubusercontent.com/erocarrera/pefile/master/pefile.py
+#requirements
+COPY requirements.txt requirements.txt
+RUN pip install -r requirements.txt
     
