@@ -6,6 +6,7 @@ import warnings
 import subprocess
 import sys
 import os
+from hashlib import sha256
 from io import StringIO
 sys.path.append(os.path.join(os.path.dirname(__file__), 'bitshred'))
 from fingerprint_db import process_executable
@@ -27,9 +28,10 @@ BITSHRED_SETTING={
 }
 
 class PEDiff:
-    def __init__(self, samplepath1, samplepath2): 
+    def __init__(self, samplepath1, samplepath2, family=''): 
         self.samplepath1=samplepath1
         self.samplepath2=samplepath2
+        self.family=family
     
     def run_command(command):
         try:
@@ -67,15 +69,72 @@ class PEDiff:
         for fuzzy, weight in WEIGHTS.items():
             fus+=weight*report[fuzzy]
         return fus
-
+    
+    def get_truncated(path):
+        pe=pefile.PE(path)
+        max_section_offset=0
+        for section in pe.sections:
+            file_offset=section.PointerToRawData
+            size=section.SizeOfRawData
+            max_section_offset=max(max_section_offset, file_offset+size)
+        file_size=len(pe.__data__)
+        pe.close()
+        return file_size<max_section_offset, max_section_offset, file_size
+    
+    def get_dos_header_sha256(path):
+        with open(path, 'rb') as f:
+            dos_header_bytes=f.read(64)
+        return sha256(dos_header_bytes).hexdigest()
+    
+    def get_dh_sha256_similarity(self, sha_1=None, sha_2=None):
+        if sha_1 is None:
+            sha_1=PEDiff.get_dos_header_sha256(self.samplepath1)
+        if sha_2 is None:
+            sha_2=PEDiff.get_dos_header_sha256(self.samplepath2)
+        return sha_1==sha_2
+    
+    def get_dh_fields_similarity(self):
+        pe1=pefile.PE(self.samplepath1)
+        pe2=pefile.PE(self.samplepath2)
+        d1=pe1.DOS_HEADER.dump_dict()
+        d2=pe2.DOS_HEADER.dump_dict()
+        pe1.close()
+        pe2.close()
+        count=0
+        for k in list(d1.keys())[1:]:
+            if d1[k]['Value']==d2[k]['Value']:
+                count+=1
+        return count/(len(d1)-1)
+    
     def get_report(self):
         report={}
+        report['exe_1']=os.path.basename(self.samplepath1)
+        report['exe_2']=os.path.basename(self.samplepath2)
+        report['family']=self.family
+
         report['ssdeep']=self.get_ssdeep_score()
         report['tlsh']=self.get_tlsh_score()
         report['bitshred']=self.get_bitshred_score()
         report['sdhash']=self.get_sdhash_score()
         report['mrsh-v2']=self.get_mrsh_score()
         report['FUS']=self.get_FUS_score(report)
+
+        is_truncated, max_section_offset, file_size=PEDiff.get_truncated(self.samplepath1)
+        report['is_truncated_1']=is_truncated
+        report['max_section_offset_1']=max_section_offset
+        report['file_size_1']=file_size
+
+        is_truncated, max_section_offset, file_size=PEDiff.get_truncated(self.samplepath2)
+        report['is_truncated_2']=is_truncated
+        report['max_section_offset_2']=max_section_offset
+        report['file_size_2']=file_size
+
+        report['dh_sha256_1']=PEDiff.get_dos_header_sha256(self.samplepath1)
+        report['dh_sha256_2']=PEDiff.get_dos_header_sha256(self.samplepath2)
+        report['dh_sha256']=self.get_dh_sha256_similarity(report['dh_sha256_1'], report['dh_sha256_2'])
+
+        report['dh_fields']=self.get_dh_fields_similarity()
+
         return report
 
 def compare_executables(EXE_1, EXE_2):
