@@ -37,4 +37,9 @@ RUN ./install_pefile.sh
 #requirements
 COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
+
+# rich header
+
+COPY patch_rich_header.py patch_rich_header.py
+RUN wget https://raw.githubusercontent.com/RichHeaderResearch/RichPE/master/rich.py && cat patch_rich_header.py >> rich.py && rm patch_rich_header.py
     
