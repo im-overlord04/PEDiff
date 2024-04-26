@@ -7,6 +7,7 @@ import subprocess
 import sys
 import os
 import struct
+import re
 from hashlib import sha256
 from io import StringIO
 from rich import my_get_rich_info
@@ -348,6 +349,49 @@ class PEDiff:
         section_names2, sorted_section_names2=PEDiff.get_sorted_section_names(self.samplepath2)
         return sorted_section_names1, sorted_section_names2, PEDiff.set_jaccard_index(section_names1, section_names2), sorted_section_names1==sorted_section_names2
     
+    def get_section_containing_address(pe, address):
+        for section in pe.sections:
+            start=section.VirtualAddress
+            end=start+section.Misc_VirtualSize
+            if address>=start and address<end:
+                return section
+        return None
+    
+    def get_section_loaded_padding_bytes(section):
+        data=section.get_data()
+        return data[:section.VirtualSize], data[section.VirtualSize:]
+    
+    def replace_printable_ascii_strings(binary_data, min_length=5):
+        regex = re.compile(b'[\x20-\x7E]{%d,}' % min_length)
+        replaced_data = regex.sub(b'', binary_data)
+        return replaced_data
+    
+    def replace_printable_wide_strings(binary_data, min_length=5):
+        regex = re.compile(b'([\x20-\x7E]\x00){%d,}' % min_length)
+        replaced_data = regex.sub(b'', binary_data)
+        return replaced_data
+
+    def remove_strings_from_data(data):
+        data=PEDiff.replace_printable_ascii_strings(data)
+        data=PEDiff.replace_printable_wide_strings(data)
+        return data
+    
+    def get_entrypoint_section_features(path):
+        pe=pefile.PE(path, fast_load=True)
+        section=PEDiff.get_entrypoint_section(pe)
+        if section==None:
+            pe.close()
+            empty_sha=sha256().hexdigest()
+            return empty_sha, empty_sha, empty_sha, empty_sha
+        es_sha256=sha256(section.get_data()).hexdigest()
+        loaded, padding=PEDiff.get_section_loaded_padding_bytes(section)
+        es_loaded_sha256=sha256(loaded).hexdigest()
+        es_padding_sha256=sha256(padding).hexdigest()
+        nostrings=PEDiff.remove_strings_from_data(section.get_data())
+        es_nostrings_sha256=sha256(nostrings).hexdigest()
+        pe.close()
+        return es_sha256, es_loaded_sha256, es_padding_sha256, es_nostrings_sha256
+
     def get_report(self):
         report={}
         report['exe_1']=os.path.basename(self.samplepath1)
@@ -436,6 +480,22 @@ class PEDiff:
         report['st_sorted_names_sha256_2']=st_sorted_names2
         report['st_sections_names_sha256']=st_section_names
         report['st_sorted_names_sha256']=st_sorted_names
+
+
+        es_sha256_1, es_loaded_sha256_1, es_padding_sha256_1, es_nostrings_sha256_1=PEDiff.get_entrypoint_section_features(self.samplepath1)
+        es_sha256_2, es_loaded_sha256_2, es_padding_sha256_2, es_nostrings_sha256_2=PEDiff.get_entrypoint_section_features(self.samplepath2)
+        report['es_sha256_1']=es_sha256_1
+        report['es_sha256_2']=es_sha256_2
+        report['es_loaded_sha256_1']=es_loaded_sha256_1
+        report['es_loaded_sha256_2']=es_loaded_sha256_2
+        report['es_padding_sha256_1']=es_padding_sha256_1
+        report['es_padding_sha256_2']=es_padding_sha256_2
+        report['es_nostrings_sha256_1']=es_nostrings_sha256_1
+        report['es_nostrings_sha256_2']=es_nostrings_sha256_2
+        report['es_sha256']=es_sha256_1==es_sha256_2
+        report['es_loaded_sha256']=es_loaded_sha256_1==es_loaded_sha256_2
+        report['es_padding_sha256']=es_padding_sha256_1==es_padding_sha256_2
+        report['es_nostrings_sha256']=es_nostrings_sha256_1==es_nostrings_sha256_2
 
         return report
 
