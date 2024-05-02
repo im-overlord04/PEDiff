@@ -51,8 +51,9 @@ class PEDiff:
         for k, v in d1.items():
             if k in d2 and v==d2[k]:
                 ji+=1
-        ji/=len(set(d1.keys()).union(set(d2.keys))) if len(set(d1.keys()).union(set(d2.keys)))>0 else 1
-
+        ji/=len(set(d1.keys()).union(set(d2.keys()))) if len(set(d1.keys()).union(set(d2.keys())))>0 else 1
+        return ji
+    
     def list_jaccard_index(l1, l2):
         count=0
         for i in range(len(l1)):
@@ -123,11 +124,6 @@ class PEDiff:
             dos_header_bytes=f.read(64)
         return sha256(dos_header_bytes).hexdigest()
     
-    def get_dh_sha256_similarity(self):
-        dh_1=PEDiff.get_dos_header_sha256(self.samplepath1)
-        dh_2=PEDiff.get_dos_header_sha256(self.samplepath2)
-        return dh_1, dh_2, dh_1==dh_2
-    
     def get_dh_fields_similarity(self):
         pe1=pefile.PE(self.samplepath1)
         pe2=pefile.PE(self.samplepath2)
@@ -141,6 +137,13 @@ class PEDiff:
                 count+=1
         return count/(len(d1)-1)
     
+    def get_dos_header_features(self):
+        dh_sha256_1=PEDiff.get_dos_header_sha256(self.samplepath1)
+        dh_sha256_2=PEDiff.get_dos_header_sha256(self.samplepath2)
+        dh_sha256=dh_sha256_1==dh_sha256_2
+        dh_fields=self.get_dh_fields_similarity()
+        return dh_sha256_1, dh_sha256_2, dh_sha256, dh_fields
+
     def byte_xor(ba1, ba2):
         return bytes([_a ^ _b for _a, _b in zip(ba1, ba2)])
 
@@ -223,7 +226,7 @@ class PEDiff:
             headervalues += [data[2 * i] ^ checksum, data[2 * i + 1] ^ checksum]
         return result
 
-    def get_ds_sha256_similarity(self):
+    def get_dos_stub_features(self):
         ds1=PEDiff.get_dos_stub_sha256(self.samplepath1)
         ds2=PEDiff.get_dos_stub_sha256(self.samplepath2)
         return ds1, ds2, ds1==ds2
@@ -365,7 +368,7 @@ class PEDiff:
     
     def get_section_loaded_padding_bytes(section):
         data=section.get_data()
-        return data[:section.VirtualSize], data[section.VirtualSize:]
+        return data[:section.Misc_VirtualSize], data[section.Misc_VirtualSize:]
     
     def replace_printable_ascii_strings(binary_data, min_length=5):
         regex = re.compile(b'[\x20-\x7E]{%d,}' % min_length)
@@ -479,7 +482,7 @@ class PEDiff:
             loaded, padding=PEDiff.get_section_loaded_padding_bytes(section)
             nostring=PEDiff.remove_strings_from_data(section.get_data())
             loaded1.append(loaded)
-            padding1.appeng(padding)
+            padding1.append(padding)
             nostring1.append(nostring)
 
         for section in pe2.sections:
@@ -488,7 +491,7 @@ class PEDiff:
             loaded, padding=PEDiff.get_section_loaded_padding_bytes(section)
             nostring=PEDiff.remove_strings_from_data(section.get_data())
             loaded2.append(loaded)
-            padding2.appeng(padding)
+            padding2.append(padding)
             nostring2.append(nostring)
 
         pe1.close()
@@ -595,7 +598,7 @@ class PEDiff:
         issuers1=PEDiff.mangle_list(issuers1)
         issuers2=PEDiff.mangle_list(issuers2)
         ct_subjects=PEDiff.set_jaccard_index(set(subject1), set(subject2))
-        ct_issuers=PEDiff.set_jaccard_index(set(issuers1, set(issuers2)))
+        ct_issuers=PEDiff.set_jaccard_index(set(issuers1), set(issuers2))
         ct_authentihash_1=PEDiff.mangle_list(PEDiff.get_authentihash_from_ct(entries1))
         ct_authentihash_2=PEDiff.mangle_list(PEDiff.get_authentihash_from_ct(entries2))
         ct_authentihash=PEDiff.set_jaccard_index(set(ct_authentihash_1), set(ct_authentihash_2))
@@ -603,7 +606,7 @@ class PEDiff:
 
     def compute_authentihash(path):
         pe=lief.parse(path)
-        return pe.authentihash(lief.PE.ALGORITHMS.SHA_256)
+        return pe.authentihash(lief.PE.ALGORITHMS.SHA_256).hex()
     
     def get_overlay(path):
         truncated, _, _=PEDiff.get_truncated(path)
@@ -662,15 +665,15 @@ class PEDiff:
         report['max_section_offset_2']=max_section_offset
         report['file_size_2']=file_size
 
-        dh1, dh2, dh_sha256=self.get_dh_sha256_similarity()
-        report['has_dos_header_1']=dh1!=sha256().hexdigest()
-        report['has_dos_header_2']=dh2!=sha256().hexdigest()
-        report['dh_sha256_1']=dh1
-        report['dh_sha256_2']=dh2
+        dh_sha256_1, dh_sha256_2, dh_sha256, dh_fields=self.get_dos_header_features()
+        report['has_dos_header_1']=dh_sha256_1!=sha256().hexdigest()
+        report['has_dos_header_2']=dh_sha256_2!=sha256().hexdigest()
+        report['dh_sha256_1']=dh_sha256_1
+        report['dh_sha256_2']=dh_sha256_2
         report['dh_sha256']=dh_sha256
-        report['dh_fields']=self.get_dh_fields_similarity()
+        report['dh_fields']=dh_fields
 
-        ds1, ds2, ds_sha256=self.get_ds_sha256_similarity()
+        ds1, ds2, ds_sha256=self.get_dos_stub_features()
         report['has_dos_stub_1']=ds1!=sha256().hexdigest()
         report['has_dos_stub_2']=ds2!=sha256().hexdigest()
         report['ds_sha256_1']=ds1
@@ -753,8 +756,8 @@ class PEDiff:
 
         pe1=pefile.PE(self.samplepath1, fast_load=True)
         pe2=pefile.PE(self.samplepath2, fast_load=True)
-        r_va1=pe1.OPTIONAL_HEADER.DATA_DIRECTORY[2] if len(pe1.OPTIONAL_HEADER.DATA_DIRECTORY)>2 else 0
-        r_va2=pe2.OPTIONAL_HEADER.DATA_DIRECTORY[2] if len(pe2.OPTIONAL_HEADER.DATA_DIRECTORY)>2 else 0
+        r_va1=pe1.OPTIONAL_HEADER.DATA_DIRECTORY[2].VirtualAddress if len(pe1.OPTIONAL_HEADER.DATA_DIRECTORY)>2 else 0
+        r_va2=pe2.OPTIONAL_HEADER.DATA_DIRECTORY[2].VirtualAddress if len(pe2.OPTIONAL_HEADER.DATA_DIRECTORY)>2 else 0
         pe1.close()
         pe2.close()
         rs_sha256_1, rs_loaded_sha256_1, rs_padding_sha256_1, rs_nostrings_sha256_1=PEDiff.get_section_features(self.samplepath1, r_va1)
@@ -812,6 +815,8 @@ class PEDiff:
         report['real_authentihash_match']=real_authentihash_1==real_authentihash_2
 
         ov_sha256_1, ov_sha256_2, ov_sha256, ov_nostrings_sha256_1, ov_nostrings_sha256_2, ov_nostrings_sha256, no_overlay_sha256_1, no_overlay_sha256_2, no_overlay_sha256=self.get_overlay_features()
+        report['has_overlay_1']=ov_sha256_1!=sha256().hexdigest()
+        report['has_overlay_2']=ov_sha256_2!=sha256().hexdigest()
         report['ov_sha256_1']=ov_sha256_1
         report['ov_sha256_2']=ov_sha256_2
         report['ov_sha256']=ov_sha256
@@ -821,7 +826,6 @@ class PEDiff:
         report['no_overlay_sha256_1']=no_overlay_sha256_1
         report['no_overlay_sha256_2']=no_overlay_sha256_2
         report['no_overlay_sha256']=no_overlay_sha256
-
 
         return report
 
