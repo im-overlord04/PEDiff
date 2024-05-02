@@ -8,6 +8,7 @@ import sys
 import os
 import struct
 import re
+import pandas as pd
 from hashlib import sha256
 from io import StringIO
 from rich import my_get_rich_info
@@ -830,7 +831,9 @@ class PEDiff:
         return report
 
 def compare_executables(EXE_1, EXE_2):
-    print('compare executables', EXE_1, EXE_2)
+    pair=PEDiff(EXE_1, EXE_2)
+    report=pair.get_report()
+    return report
 
 def compare_directory(DIR):
     print('compare directory', DIR)
@@ -854,7 +857,6 @@ def main():
     weights_group=parser.add_argument_group('FUS weights for fuzzy hashes\' scores')
     for fuzzy, weight in WEIGHTS.items():
         weights_group.add_argument(f'--{fuzzy}', help=f'Set the weight for {fuzzy} score (default: {round(weight, 3)})', type=float, default=weight, metavar=('WEIGHT'))
-
     bitshred_group=parser.add_argument_group('Bitshred settings')
     for setting, value in BITSHRED_SETTING.items():
         if setting=='all_sec':
@@ -867,7 +869,7 @@ def main():
         fuzzy=arg.dest
         weight=getattr(args, fuzzy)
         if weight is not None:
-            WEIGHTS[fuzzy]=weight
+            WEIGHTS[fuzzy.replace('_', '-')]=weight
 
     for arg in bitshred_group._group_actions:
         option=arg.dest
@@ -876,9 +878,11 @@ def main():
             BITSHRED_SETTING[option]=value
 
     if args.files:
-        compare_executables(args.files[0], args.files[1])
+        report=[compare_executables(args.files[0], args.files[1])]
     elif args.directory:
-        compare_directory(args.directory)
+        report=compare_directory(args.directory)
+    df=pd.DataFrame(report)
+    df.to_csv(args.output)
 
 if __name__=='__main__':
     main()
