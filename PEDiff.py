@@ -804,7 +804,17 @@ class PEDiff:
         report['real_authentihash_2']=real_authentihash_2
         report['real_authentihash_match']=real_authentihash_1==real_authentihash_2
 
-        
+        ov_sha256_1, ov_sha256_2, ov_sha256, ov_nostrings_sha256_1, ov_nostrings_sha256_2, ov_nostrings_sha256, no_overlay_sha256_1, no_overlay_sha256_2, no_overlay_sha256=self.get_overlay_features()
+        report['ov_sha256_1']=ov_sha256_1
+        report['ov_sha256_2']=ov_sha256_2
+        report['ov_sha256']=ov_sha256
+        report['ov_nostrings_sha256_1']=ov_nostrings_sha256_1
+        report['ov_nostrings_sha256_2']=ov_nostrings_sha256_2
+        report['ov_nostrings_sha256']=ov_nostrings_sha256
+        report['no_overlay_sha256_1']=no_overlay_sha256_1
+        report['no_overlay_sha256_2']=no_overlay_sha256_2
+        report['no_overlay_sha256']=no_overlay_sha256
+
 
         return report
 
