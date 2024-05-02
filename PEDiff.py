@@ -31,10 +31,9 @@ BITSHRED_SETTING={
 }
 
 class PEDiff:
-    def __init__(self, samplepath1, samplepath2, family=''): 
+    def __init__(self, samplepath1, samplepath2): 
         self.samplepath1=samplepath1
         self.samplepath2=samplepath2
-        self.family=family
     
     def run_command(command):
         try:
@@ -632,11 +631,12 @@ class PEDiff:
             no_overlay_sha256_2=sha256(f.read(offset2)).hexdigest()
         return ov_sha256_1, ov_sha256_2, ov_sha256, ov_nostrings_sha256_1, ov_nostrings_sha256_2, ov_nostrings_sha256, no_overlay_sha256_1, no_overlay_sha256_2, no_overlay_sha256_1==no_overlay_sha256_2
 
-    def get_report(self):
+    def get_report(self, family_1='', family_2=''):
         report={}
         report['exe_1']=os.path.basename(self.samplepath1)
         report['exe_2']=os.path.basename(self.samplepath2)
-        report['family']=self.family
+        report['family_1']=family_1
+        report['family_2']=family_2
 
         report['ssdeep']=self.get_ssdeep_score()
         report['tlsh']=self.get_tlsh_score()
