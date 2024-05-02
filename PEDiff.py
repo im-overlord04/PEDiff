@@ -94,7 +94,14 @@ class PEDiff:
         stdout=PEDiff.run_command(f'mrsh -t 0 -c {self.samplepath1} {self.samplepath2}')
         return int(stdout.split('|')[2])
 
-    def get_FUS_score(self, report):
+    def get_FUS_score(self, report=None):
+        if report is None:
+            report={}
+            report['ssdeep']=self.get_ssdeep_score()
+            report['tlsh']=self.get_tlsh_score()
+            report['bitshred']=self.get_bitshred_score()
+            report['sdhash']=self.get_sdhash_score()
+            report['mrsh-v2']=self.get_mrsh_score()
         fus=0
         for fuzzy, weight in WEIGHTS.items():
             fus+=weight*report[fuzzy]
