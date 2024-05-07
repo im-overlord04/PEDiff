@@ -549,7 +549,7 @@ class PEDiff:
             tmp=f'/tmp/{sha256(entry).hexdigest()}_{os.getpid()}'
             with open(tmp, 'wb') as f:
                 f.write(entry)
-            output=PEDiff.run_command(f'openssl pkcs7 -in {tmp} -inform DER')
+            output=PEDiff.run_command(f'openssl pkcs7 -in {tmp} -inform DER').encode()
             pkcs7.append(sha256(output).hexdigest())
             os.remove(tmp)
         return pkcs7
