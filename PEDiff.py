@@ -1,6 +1,7 @@
 import argparse
 import pefile
 import lief
+lief.logging.disable()
 import csv
 import warnings
 import subprocess
