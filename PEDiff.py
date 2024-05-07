@@ -9,7 +9,7 @@ import sys
 import os
 import struct
 import re
-import tqdm
+from tqdm import tqdm
 import pandas as pd
 from hashlib import sha256
 from io import StringIO
@@ -845,7 +845,7 @@ def compare_directory(DIR, processes):
     EXEs=os.listdir(DIR)
     pairs=[(os.path.join(DIR, exe1), os.path.join(DIR, exe2)) for i, exe1 in enumerate(EXEs[:-1]) for exe2 in EXEs[i+1:]]
     with Pool(processes) as pool:
-        reports=list(tqdm(pool.map(dispatch_pair, pairs), total=len(pairs)))
+        reports=list(tqdm(pool.imap(dispatch_pair, pairs), total=len(pairs)))
     return reports
 
 def main():
@@ -893,7 +893,7 @@ def main():
     elif args.directory:
         report=compare_directory(args.directory, args.processes)
     df=pd.DataFrame(report)
-    df.to_csv(args.output)
+    df.to_csv(args.output, index=False)
 
 if __name__=='__main__':
     main()
