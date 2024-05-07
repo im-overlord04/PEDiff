@@ -841,10 +841,10 @@ def compare_executables(EXE_1, EXE_2):
 def dispatch_pair(args):
     return compare_executables(*args)
 
-def compare_directory(DIR):
+def compare_directory(DIR, processes):
     EXEs=os.listdir(DIR)
     pairs=[(os.path.join(DIR, exe1), os.path.join(DIR, exe2)) for i, exe1 in enumerate(EXEs[:-1]) for exe2 in EXEs[i+1:]]
-    with Pool() as pool:
+    with Pool(processes) as pool:
         reports=list(tqdm(pool.map(dispatch_pair, pairs), total=len(pairs)))
     return reports
 
@@ -863,6 +863,7 @@ def main():
     target_type=mode_group.add_mutually_exclusive_group(required=True)
     target_type.add_argument('-f', '--files', help='compare the pair of files EXE_1 and EXE_2', nargs=2, metavar=('EXE_1', 'EXE_2'))
     target_type.add_argument('-d', '--directory', help='compare ALL the files inside the directory DIR', metavar=('DIR'), type=str)
+    target_type.add_argument('-p', '--processes', required='--directory' in sys.argv or '-d' in sys.argv, help='number of processes used in directory mode', default=1)
 
     weights_group=parser.add_argument_group('FUS weights for fuzzy hashes\' scores')
     for fuzzy, weight in WEIGHTS.items():
@@ -890,7 +891,7 @@ def main():
     if args.files:
         report=[compare_executables(args.files[0], args.files[1])]
     elif args.directory:
-        report=compare_directory(args.directory)
+        report=compare_directory(args.directory, args.processes)
     df=pd.DataFrame(report)
     df.to_csv(args.output)
 
