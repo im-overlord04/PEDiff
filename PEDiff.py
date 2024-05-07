@@ -8,10 +8,12 @@ import sys
 import os
 import struct
 import re
+import tqdm
 import pandas as pd
 from hashlib import sha256
 from io import StringIO
 from rich import my_get_rich_info
+from multiprocessing import Pool
 sys.path.append(os.path.join(os.path.dirname(__file__), 'bitshred'))
 from fingerprint_db import process_executable
 from fingerprint import jaccard_distance
@@ -835,8 +837,15 @@ def compare_executables(EXE_1, EXE_2):
     report=pair.get_report()
     return report
 
+def dispatch_pair(args):
+    return compare_executables(*args)
+
 def compare_directory(DIR):
-    print('compare directory', DIR)
+    EXEs=os.listdir(DIR)
+    pairs=[(os.path.join(DIR, exe1), os.path.join(exe2)) for i, exe1 in enumerate(EXEs[:-1]) for exe2 in EXEs[i+1:]]
+    with Pool() as pool:
+        reports=list(tqdm(pool.map(dispatch_pair, pairs), total=len(pairs)))
+    return reports
 
 def main():
 
