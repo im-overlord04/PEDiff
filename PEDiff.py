@@ -863,7 +863,7 @@ def main():
     target_type=mode_group.add_mutually_exclusive_group(required=True)
     target_type.add_argument('-f', '--files', help='compare the pair of files EXE_1 and EXE_2', nargs=2, metavar=('EXE_1', 'EXE_2'))
     target_type.add_argument('-d', '--directory', help='compare ALL the files inside the directory DIR', metavar=('DIR'), type=str)
-    target_type.add_argument('-p', '--processes', required='--directory' in sys.argv or '-d' in sys.argv, help='number of processes used in directory mode (default: 1)', default=1)
+    parser.add_argument('-p', '--processes', required='--directory' in sys.argv or '-d' in sys.argv, help='number of processes used in directory mode (default: 1)', type=int, default=1)
 
     weights_group=parser.add_argument_group('FUS weights for fuzzy hashes\' scores')
     for fuzzy, weight in WEIGHTS.items():
