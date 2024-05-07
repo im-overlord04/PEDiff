@@ -842,7 +842,7 @@ def dispatch_pair(args):
 
 def compare_directory(DIR):
     EXEs=os.listdir(DIR)
-    pairs=[(os.path.join(DIR, exe1), os.path.join(exe2)) for i, exe1 in enumerate(EXEs[:-1]) for exe2 in EXEs[i+1:]]
+    pairs=[(os.path.join(DIR, exe1), os.path.join(DIR, exe2)) for i, exe1 in enumerate(EXEs[:-1]) for exe2 in EXEs[i+1:]]
     with Pool() as pool:
         reports=list(tqdm(pool.map(dispatch_pair, pairs), total=len(pairs)))
     return reports
