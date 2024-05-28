@@ -21,9 +21,7 @@ cd .. && rm -rf tlsh
 
 # bitshred
 # export DOCKER_BUILDKIT=1
-RUN mkdir ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
-RUN --mount=type=ssh git clone git@github.com:im-overlord04/bitshred-python.git && mv bitshred-python/bitshred-python bitshred && rm -rf bitshred-python
-RUN ls bitshred
+RUN git clone https://github.com/im-overlord04/bitshred-python.git && mv bitshred-python/bitshred-python bitshred && rm -rf bitshred-python
 # mrsh-v2
 
 RUN wget https://www.fbreitinger.de/wp-content/uploads/2018/07/mrsh_v2.0.zip && unzip mrsh_v2.0.zip && cd mrsh_v2.0 &&\
@@ -43,3 +41,5 @@ RUN pip install -r requirements.txt
 COPY patch_rich_header.py patch_rich_header.py
 RUN wget https://raw.githubusercontent.com/RichHeaderResearch/RichPE/master/rich.py && cat patch_rich_header.py >> rich.py && rm patch_rich_header.py
     
+COPY PEDiff.py PEDiff.py
+ENTRYPOINT ["python3.10", "PEDiff.py"]
