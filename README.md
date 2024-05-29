@@ -14,7 +14,7 @@ In the following examples, users must specify only the parameters surrounded by 
 
 For comparing two files:
 ```bash
-docker run -v <path/to/file_1>:/file_1 -v <path/to/file_2>:/file_2 -v <path/to/output/folder/>:/tmp pediff -f /file_1 /file_2 -o <output_name.csv>
+docker run -v <path/to/file_1>:/file_1 -v <path/to/file_2>:/file_2 -v <path/to/output/folder/>:/tmp pediff -f /file_1 /file_2 -o /tmp/<output_name.csv>
 ```
 For comparing all the files in a directory:
 
