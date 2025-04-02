@@ -35,7 +35,7 @@ BITSHRED_SETTING={
     'all_sec':False
 }
 
-MAIN_FEATURES=['exe_1', 'exe_2', 'is_truncated_1', 'is_truncated_2', 'dh_sha256', 'ds_sha256', 'rh_sha256', 'ch_sha256', 'oh_sha256', 'dd_sha256', 'st_sha256', 'es_sha256', 'rs_sha256', 'os_sorted_sections_sha256', 'ct_sha256', 'ov_sha256']
+MAIN_FEATURES=['dh_sha256', 'dh_tlsh', 'ds_sha256', 'ds_tlsh', 'rh_sha256', 'rh_tlsh', 'ch_sha256', 'ch_tlsh', 'oh_sha256', 'oh_tlsh', 'dd_sha256', 'dd_tlsh', 'st_sha256', 'st_tlsh', 'es_sha256', 'es_tlsh', 'rs_sha256', 'rh_tlsh', 'os_sorted_sections_sha256', 'os_tlsh', 'ct_sha256', 'ct_tlsh', 'ov_sha256', 'ov_tlsh']
 
 class PEDiff:
     def __init__(self, samplepath1, samplepath2): 
@@ -671,7 +671,7 @@ class PEDiff:
     def tlsh_diff(tlsh1, tlsh2):
         return tlsh.diff(tlsh1, tlsh2) if tlsh1!='TNULL' and tlsh2!='TNULL' else -1
 
-    def get_report(self, family_1='', family_2='', only_tlsh=False, print_results=False):
+    def get_report(self, family_1='', family_2='', only_tlsh=False):
         report={}
         report['exe_1']=os.path.basename(self.samplepath1)
         report['exe_2']=os.path.basename(self.samplepath2)
@@ -1045,23 +1045,11 @@ class PEDiff:
             report['ov_tlsh_2']=ov_tlsh_2
             report['ov_tlsh']=PEDiff.tlsh_diff(ov_tlsh_1, ov_tlsh_2)
 
-        if print_results:
-            print('Feature\t\tResult')
-            for feature in MAIN_FEATURES:
-                if 'truncated' in feature:
-                    result=report[feature]
-                else:
-                    result='Equal' if report[feature]==True else ('Different' if report[feature]==False else report[feature])
-                print(feature, result, sep='\t')
-                if 'truncated' not in feature and 'exe' not in feature:
-                    feature=feature.split('_')[0]+'_tlsh'
-                    result=report[feature]
-                    print(feature, result, sep='\t\t')
         return report
 
-def compare_executables(EXE_1, EXE_2, only_tlsh, print_results):
+def compare_executables(EXE_1, EXE_2, only_tlsh):
     pair=PEDiff(EXE_1, EXE_2)
-    report=pair.get_report(only_tlsh=only_tlsh, print_results=print_results)
+    report=pair.get_report(only_tlsh=only_tlsh)
     return report
 
 def dispatch_pair(args):
@@ -1117,11 +1105,17 @@ def main():
             BITSHRED_SETTING[option]=value
 
     if args.files:
-        report=[compare_executables(args.files[0], args.files[1], args.tlsh_only, args.print)]
+        report=[compare_executables(args.files[0], args.files[1], args.tlsh_only)]
     elif args.directory:
         report=compare_directory(args.directory, args.processes, args.tlsh_only)
     df=pd.DataFrame(report)
     df.to_csv(args.output, index=False)
+    if args.print:
+        if args.files:
+            print(df[['exe_1', 'exe_2']+MAIN_FEATURES].replace([True, False], ['Equal', 'Different']).T.to_string(header=False))
+        elif args.directory:
+            tmp=df.agg({feature:(lambda x: x.sum()/x.shape[0]*100) if 'tlsh' not in feature else (lambda x: x[x>=0].mean()) for feature in MAIN_FEATURES}).fillna(-1)
+            print(tmp.T.round(2).to_string(header=False))
 
 if __name__=='__main__':
     main()
