@@ -1,6 +1,7 @@
 import argparse
 import pefile
 import lief
+import tlsh
 lief.logging.disable()
 import csv
 import warnings
@@ -16,8 +17,8 @@ from io import StringIO
 from rich import my_get_rich_info
 from multiprocessing import Pool
 sys.path.append(os.path.join(os.path.dirname(__file__), 'bitshred'))
-from fingerprint_db import process_executable
-from fingerprint import jaccard_distance
+#from fingerprint_db import process_executable
+#from fingerprint import jaccard_distance
 
 WEIGHTS={
     'ssdeep':0.357,
@@ -33,6 +34,8 @@ BITSHRED_SETTING={
     'fp_size':32,
     'all_sec':False
 }
+
+MAIN_FEATURES=['exe_1', 'exe_2', 'is_truncated_1', 'is_truncated_2', 'dh_sha256', 'ds_sha256', 'rh_sha256', 'ch_sha256', 'oh_sha256', 'dd_sha256', 'st_sha256', 'es_sha256', 'rs_sha256', 'os_sorted_sections_sha256', 'ct_sha256', 'ov_sha256']
 
 class PEDiff:
     def __init__(self, samplepath1, samplepath2): 
@@ -113,7 +116,7 @@ class PEDiff:
         return fus
     
     def get_truncated(path):
-        pe=pefile.PE(path)
+        pe=pefile.PE(path, fast_load=True)
         max_section_offset=0
         for section in pe.sections:
             file_offset=section.PointerToRawData
@@ -126,11 +129,11 @@ class PEDiff:
     def get_dos_header_sha256(path):
         with open(path, 'rb') as f:
             dos_header_bytes=f.read(64)
-        return sha256(dos_header_bytes).hexdigest()
+        return sha256(dos_header_bytes).hexdigest(), tlsh.hash(dos_header_bytes)
     
     def get_dh_fields_similarity(self):
-        pe1=pefile.PE(self.samplepath1)
-        pe2=pefile.PE(self.samplepath2)
+        pe1=pefile.PE(self.samplepath1, fast_load=True)
+        pe2=pefile.PE(self.samplepath2, fast_load=True)
         d1=pe1.DOS_HEADER.dump_dict()
         d2=pe2.DOS_HEADER.dump_dict()
         pe1.close()
@@ -142,11 +145,11 @@ class PEDiff:
         return count/(len(d1)-1)
     
     def get_dos_header_features(self):
-        dh_sha256_1=PEDiff.get_dos_header_sha256(self.samplepath1)
-        dh_sha256_2=PEDiff.get_dos_header_sha256(self.samplepath2)
+        dh_sha256_1, dh_tlsh_1=PEDiff.get_dos_header_sha256(self.samplepath1)
+        dh_sha256_2, dh_tlsh_2=PEDiff.get_dos_header_sha256(self.samplepath2)
         dh_sha256=dh_sha256_1==dh_sha256_2
         dh_fields=self.get_dh_fields_similarity()
-        return dh_sha256_1, dh_sha256_2, dh_sha256, dh_fields
+        return dh_sha256_1, dh_tlsh_1, dh_sha256_2, dh_tlsh_2, dh_sha256, dh_fields
 
     def byte_xor(ba1, ba2):
         return bytes([_a ^ _b for _a, _b in zip(ba1, ba2)])
@@ -163,8 +166,8 @@ class PEDiff:
             for i in range(0, len(data), 4):
                 xor=PEDiff.byte_xor(data[i:i+4], key)
                 if xor==b'DanS':
-                    return sha256(data[:i]).hexdigest()
-        return sha256(data).hexdigest()
+                    data=data[:i]
+        return sha256(data).hexdigest(), tlsh.hash(data)
     
     def get_rich_header(path):
         pe=pefile.PE(path, fast_load=True)
@@ -231,14 +234,16 @@ class PEDiff:
         return result
 
     def get_dos_stub_features(self):
-        ds1=PEDiff.get_dos_stub_sha256(self.samplepath1)
-        ds2=PEDiff.get_dos_stub_sha256(self.samplepath2)
-        return ds1, ds2, ds1==ds2
+        ds1, tlsh1=PEDiff.get_dos_stub_sha256(self.samplepath1)
+        ds2, tlsh2=PEDiff.get_dos_stub_sha256(self.samplepath2)
+        return ds1, tlsh1, ds2, tlsh2, ds1==ds2
 
     def get_rh_sha256_similarity(self):
-        rh1=sha256(PEDiff.get_rich_header(self.samplepath1)).hexdigest()
-        rh2=sha256(PEDiff.get_rich_header(self.samplepath2)).hexdigest()
-        return rh1, rh2, rh1==rh2 
+        data1=PEDiff.get_rich_header(self.samplepath1)
+        data2=PEDiff.get_rich_header(self.samplepath2)
+        rh1=sha256(data1).hexdigest()
+        rh2=sha256(data2).hexdigest()
+        return rh1, tlsh.hash(data1), rh2, tlsh.hash(data2), rh1==rh2 
     
     def get_rich_header_fields(path):
         rich_header=PEDiff.get_rich_header(path)
@@ -272,12 +277,12 @@ class PEDiff:
         coff_header_offset=pe.DOS_HEADER.e_lfanew+4 # PE\x00\x00
         coff_header_bytes=pe.__data__[coff_header_offset:coff_header_offset+20]
         pe.close()
-        return sha256(coff_header_bytes).hexdigest()
+        return sha256(coff_header_bytes).hexdigest(), tlsh.hash(coff_header_bytes)
 
     def get_ch_sha256_similarity(self):
-        ch1=PEDiff.get_coff_header_sha256(self.samplepath1)
-        ch2=PEDiff.get_coff_header_sha256(self.samplepath2)
-        return ch1, ch2, ch1==ch2
+        ch1, tlsh1=PEDiff.get_coff_header_sha256(self.samplepath1)
+        ch2, tlsh2=PEDiff.get_coff_header_sha256(self.samplepath2)
+        return ch1, tlsh1, ch2, tlsh2, ch1==ch2
     
     def get_ch_fields_similarity(self):
         pe1=pefile.PE(self.samplepath1, fast_load=True)
@@ -291,12 +296,12 @@ class PEDiff:
         optional_header_start_offset=pe.OPTIONAL_HEADER.get_file_offset()
         optional_header_bytes=pe.__data__[optional_header_start_offset:optional_header_start_offset+96]
         pe.close()
-        return sha256(optional_header_bytes).hexdigest()
+        return sha256(optional_header_bytes).hexdigest(), tlsh.hash(optional_header_bytes)
     
     def get_oh_sha256_similarity(self):
-        oh1=PEDiff.get_optional_header_sha256(self.samplepath1)
-        oh2=PEDiff.get_optional_header_sha256(self.samplepath2)
-        return oh1, oh2, oh1==oh2
+        oh1, tlsh1=PEDiff.get_optional_header_sha256(self.samplepath1)
+        oh2, tlsh2=PEDiff.get_optional_header_sha256(self.samplepath2)
+        return oh1, tlsh1, oh2, tlsh2, oh1==oh2
     
     def get_oh_fields_similarity(self):
         pe1=pefile.PE(self.samplepath1, fast_load=True)
@@ -313,12 +318,12 @@ class PEDiff:
         data_directories_size=len(pe.OPTIONAL_HEADER.DATA_DIRECTORY)*8
         data_directories_start_offset=pe.OPTIONAL_HEADER.get_file_offset()+96
         data_directories_bytes=pe.__data__[data_directories_start_offset:data_directories_start_offset+data_directories_size]
-        return sha256(data_directories_bytes).hexdigest()
+        return sha256(data_directories_bytes).hexdigest(), tlsh.hash(data_directories_bytes)
     
     def get_dd_sha256_similarity(self):
-        dd1=PEDiff.get_data_directories_sha256(self.samplepath1)
-        dd2=PEDiff.get_data_directories_sha256(self.samplepath2)
-        return dd1, dd2, dd1==dd2
+        dd1, tlsh1=PEDiff.get_data_directories_sha256(self.samplepath1)
+        dd2, tlsh2=PEDiff.get_data_directories_sha256(self.samplepath2)
+        return dd1, tlsh1, dd2, tlsh2, dd1==dd2
     
     def prepare_data_directories_dict(path):
         pe=pefile.PE(path, fast_load=True)
@@ -341,12 +346,12 @@ class PEDiff:
         section_table_start_offset=pe.OPTIONAL_HEADER.get_file_offset()+96+len(pe.OPTIONAL_HEADER.DATA_DIRECTORY)*8
         section_table_size=len(pe.sections)*40
         section_table_bytes=pe.__data__[section_table_start_offset:section_table_start_offset+section_table_size]
-        return sha256(section_table_bytes).hexdigest()
+        return sha256(section_table_bytes).hexdigest(), tlsh.hash(section_table_bytes)
     
     def get_st_sha256_similarity(self):
-        st1=PEDiff.get_section_table_sha256(self.samplepath1)
-        st2=PEDiff.get_section_table_sha256(self.samplepath2)
-        return st1, st2, st1==st2
+        st1, tlsh1=PEDiff.get_section_table_sha256(self.samplepath1)
+        st2, tlsh2=PEDiff.get_section_table_sha256(self.samplepath2)
+        return st1, tlsh1, st2, tlsh2, st1==st2
     
     def get_sorted_section_names(path):
         pe=pefile.PE(path, fast_load=True)
@@ -389,21 +394,24 @@ class PEDiff:
         data=PEDiff.replace_printable_wide_strings(data)
         return data
 
-    def get_section_features(path, va):
+    def get_section_features(path, va, only_tlsh=False):
         pe=pefile.PE(path, fast_load=True)
         section=PEDiff.get_section_containing_address(pe, va)
         if section==None:
             pe.close()
             empty_sha=sha256().hexdigest()
-            return empty_sha, empty_sha, empty_sha, empty_sha
+            return empty_sha, 'TNULL', empty_sha, empty_sha, empty_sha
         s_sha256=sha256(section.get_data()).hexdigest()
+        s_tlsh=tlsh.hash(section.get_data())
+        if only_tlsh:
+            return s_sha256, s_tlsh, '', '', ''
         loaded, padding=PEDiff.get_section_loaded_padding_bytes(section)
         s_loaded_sha256=sha256(loaded).hexdigest()
         s_padding_sha256=sha256(padding).hexdigest()
         nostrings=PEDiff.remove_strings_from_data(section.get_data())
         s_nostrings_sha256=sha256(nostrings).hexdigest()
         pe.close()
-        return s_sha256, s_loaded_sha256, s_padding_sha256, s_nostrings_sha256
+        return s_sha256, s_tlsh, s_loaded_sha256, s_padding_sha256, s_nostrings_sha256
     
     def get_resources(pe):
         resources={}
@@ -468,7 +476,7 @@ class PEDiff:
         names=[el[0] for el in names]
         return sections, names
     
-    def get_other_sections_features(self):
+    def get_other_sections_features(self, only_tlsh=False):
         pe1=pefile.PE(self.samplepath1, fast_load=True)
         pe2=pefile.PE(self.samplepath2, fast_load=True)
         sections1, names1=PEDiff.get_other_sections(pe1)
@@ -479,6 +487,16 @@ class PEDiff:
         padding2=[]
         nostring1=[]
         nostring2=[]
+
+        data1=b''.join(sections1)
+        data2=b''.join(sections2)
+        os_sorted_sections_sha256_1=sha256(b''.join(sections1)).hexdigest()
+        os_tlsh_1=tlsh.hash(data1)
+        os_sorted_sections_sha256_2=sha256(b''.join(sections2)).hexdigest()
+        os_tlsh_2=tlsh.hash(data2)
+
+        if only_tlsh:
+            return os_sorted_sections_sha256_1, os_tlsh_1, os_sorted_sections_sha256_2, os_tlsh_2 
 
         for section in pe1.sections:
             if section.Name not in names1:
@@ -500,8 +518,6 @@ class PEDiff:
 
         pe1.close()
         pe2.close()
-        os_sorted_sections_sha256_1=sha256(b''.join(sections1)).hexdigest()
-        os_sorted_sections_sha256_2=sha256(b''.join(sections2)).hexdigest()
         os_sorted_sections_sha256=os_sorted_sections_sha256_1==os_sorted_sections_sha256_2
         sections1=PEDiff.mangle_list(sections1)
         sections2=PEDiff.mangle_list(sections2)
@@ -518,13 +534,14 @@ class PEDiff:
         os_sorted_names_sha256_1=sha256(b''.join(names1)).hexdigest()
         os_sorted_names_sha256_2=sha256(b''.join(names2)).hexdigest()
         os_sorted_names_sha256=os_sorted_names_sha256_1==os_sorted_names_sha256_2
-        return os_sorted_sections_sha256_1, os_sorted_sections_sha256_2, os_sorted_sections_sha256, os_sections, os_sections_loaded, os_sections_padding, os_sections_nostrings, os_sorted_names_sha256_1, os_sorted_names_sha256_2, os_sorted_names_sha256
+        return os_sorted_sections_sha256_1, os_tlsh_1, os_sorted_sections_sha256_2, os_tlsh_2, os_sorted_sections_sha256, os_sections, os_sections_loaded, os_sections_padding, os_sections_nostrings, os_sorted_names_sha256_1, os_sorted_names_sha256_2, os_sorted_names_sha256
     
     def get_ct_sha256(pe):
         ct_offset=pe.OPTIONAL_HEADER.DATA_DIRECTORY[4].VirtualAddress if len(pe.OPTIONAL_HEADER.DATA_DIRECTORY)>4 else 0
         ct_size=pe.OPTIONAL_HEADER.DATA_DIRECTORY[4].Size if len(pe.OPTIONAL_HEADER.DATA_DIRECTORY)>4 else 0
-        ct_sha256=sha256(pe.get_data()[ct_offset:ct_offset+ct_size]).hexdigest()
-        return ct_sha256
+        data=pe.get_data()[ct_offset:ct_offset+ct_size]
+        ct_sha256=sha256(data).hexdigest()
+        return ct_sha256, tlsh.hash(data)
     
     def get_ct_entries(pe):
         entries=[]
@@ -549,8 +566,10 @@ class PEDiff:
             tmp=f'/tmp/{sha256(entry).hexdigest()}_{os.getpid()}'
             with open(tmp, 'wb') as f:
                 f.write(entry)
-            output=PEDiff.run_command(f'openssl pkcs7 -in {tmp} -inform DER').encode()
-            pkcs7.append(sha256(output).hexdigest())
+            output=PEDiff.run_command(f'openssl pkcs7 -in {tmp} -inform DER')
+            if output is not None:
+                output=output.encode()
+                pkcs7.append(sha256(output).hexdigest())
             os.remove(tmp)
         return pkcs7
     
@@ -563,11 +582,12 @@ class PEDiff:
                 f.write(entry)
             output=PEDiff.run_command(f'openssl pkcs7 -in {tmp} -inform DER -print_certs')
             os.remove(tmp)
-            for line in output.split('\n'):
-                if line.startswith('subject='):
-                    subjects.append(line[8:])
-                elif line.startswith('issuer='):
-                    issuers.append(line[7:])
+            if output is not None:
+                for line in output.split('\n'):
+                    if line.startswith('subject='):
+                        subjects.append(line[8:])
+                    elif line.startswith('issuer='):
+                        issuers.append(line[7:])
         return subjects, issuers
     
     def get_authentihash_from_ct(entries):
@@ -578,14 +598,15 @@ class PEDiff:
                 f.write(entry)
             output=PEDiff.run_command(f'openssl asn1parse -in {tmp} -inform DER | grep -oP \'(?<=\[HEX DUMP\]:)[0-9A-Fa-f]+\' | head -1').strip()
             os.remove(tmp)
-            authentihashes.append(output)
+            if output is not None:
+                authentihashes.append(output)
         return authentihashes
 
     def get_certificate_table_features(self):
         pe1=pefile.PE(self.samplepath1, fast_load=True)
         pe2=pefile.PE(self.samplepath2, fast_load=True)
-        ct_sha256_1=PEDiff.get_ct_sha256(pe1)
-        ct_sha256_2=PEDiff.get_ct_sha256(pe2)
+        ct_sha256_1, ct_tlsh_1=PEDiff.get_ct_sha256(pe1)
+        ct_sha256_2, ct_tlsh_2=PEDiff.get_ct_sha256(pe2)
         ct_sha256=ct_sha256_1==ct_sha256_2
         entries1=PEDiff.get_ct_entries(pe1)
         entries2=PEDiff.get_ct_entries(pe2)
@@ -606,7 +627,7 @@ class PEDiff:
         ct_authentihash_1=PEDiff.mangle_list(PEDiff.get_authentihash_from_ct(entries1))
         ct_authentihash_2=PEDiff.mangle_list(PEDiff.get_authentihash_from_ct(entries2))
         ct_authentihash=PEDiff.set_jaccard_index(set(ct_authentihash_1), set(ct_authentihash_2))
-        return ct_sha256_1, ct_sha256_2, ct_sha256, ct_entries, ct_pkcs7, ct_subjects, ct_issuers, ct_authentihash
+        return ct_sha256_1, ct_tlsh_1, ct_sha256_2, ct_tlsh_2, ct_sha256, ct_entries, ct_pkcs7, ct_subjects, ct_issuers, ct_authentihash
 
     def compute_authentihash(path):
         pe=lief.parse(path)
@@ -633,6 +654,8 @@ class PEDiff:
         overlay2, offset2=PEDiff.get_overlay(self.samplepath2)
         ov_sha256_1=sha256(overlay1).hexdigest()
         ov_sha256_2=sha256(overlay2).hexdigest()
+        ov_tlsh_1=tlsh.hash(overlay1)
+        ov_tlsh_2=tlsh.hash(overlay2)
         ov_sha256=ov_sha256_1==ov_sha256_2
         nostrings1=PEDiff.remove_strings_from_data(overlay1)
         nostrings2=PEDiff.remove_strings_from_data(overlay2)
@@ -643,207 +666,410 @@ class PEDiff:
             no_overlay_sha256_1=sha256(f.read(offset1)).hexdigest()
         with open(self.samplepath2, 'rb') as f:
             no_overlay_sha256_2=sha256(f.read(offset2)).hexdigest()
-        return ov_sha256_1, ov_sha256_2, ov_sha256, ov_nostrings_sha256_1, ov_nostrings_sha256_2, ov_nostrings_sha256, no_overlay_sha256_1, no_overlay_sha256_2, no_overlay_sha256_1==no_overlay_sha256_2
+        return ov_sha256_1, ov_tlsh_1, ov_sha256_2, ov_tlsh_2, ov_sha256, ov_nostrings_sha256_1, ov_nostrings_sha256_2, ov_nostrings_sha256, no_overlay_sha256_1, no_overlay_sha256_2, no_overlay_sha256_1==no_overlay_sha256_2
+    
+    def tlsh_diff(tlsh1, tlsh2):
+        return tlsh.diff(tlsh1, tlsh2) if tlsh1!='TNULL' and tlsh2!='TNULL' else -1
 
-    def get_report(self, family_1='', family_2=''):
+    def get_report(self, family_1='', family_2='', only_tlsh=False, print_results=False):
         report={}
         report['exe_1']=os.path.basename(self.samplepath1)
         report['exe_2']=os.path.basename(self.samplepath2)
         report['family_1']=family_1
         report['family_2']=family_2
 
-        report['ssdeep']=self.get_ssdeep_score()
-        report['tlsh']=self.get_tlsh_score()
-        report['bitshred']=self.get_bitshred_score()
-        report['sdhash']=self.get_sdhash_score()
-        report['mrsh-v2']=self.get_mrsh_score()
-        report['FUS']=self.get_FUS_score(report)
+        #report['ssdeep']=self.get_ssdeep_score()
+        #report['tlsh']=self.get_tlsh_score()
+        #report['bitshred']=self.get_bitshred_score()
+        #report['sdhash']=self.get_sdhash_score()
+        #report['mrsh-v2']=self.get_mrsh_score()
+        #report['FUS']=self.get_FUS_score(report)
 
-        is_truncated, max_section_offset, file_size=PEDiff.get_truncated(self.samplepath1)
-        report['is_truncated_1']=is_truncated
-        report['max_section_offset_1']=max_section_offset
-        report['file_size_1']=file_size
+        if not only_tlsh:
+            is_truncated, max_section_offset, file_size=PEDiff.get_truncated(self.samplepath1)
+            report['is_truncated_1']=is_truncated
+            report['max_section_offset_1']=max_section_offset
+            report['file_size_1']=file_size
 
-        is_truncated, max_section_offset, file_size=PEDiff.get_truncated(self.samplepath2)
-        report['is_truncated_2']=is_truncated
-        report['max_section_offset_2']=max_section_offset
-        report['file_size_2']=file_size
+            is_truncated, max_section_offset, file_size=PEDiff.get_truncated(self.samplepath2)
+            report['is_truncated_2']=is_truncated
+            report['max_section_offset_2']=max_section_offset
+            report['file_size_2']=file_size
 
-        dh_sha256_1, dh_sha256_2, dh_sha256, dh_fields=self.get_dos_header_features()
-        report['has_dos_header_1']=dh_sha256_1!=sha256().hexdigest()
-        report['has_dos_header_2']=dh_sha256_2!=sha256().hexdigest()
-        report['dh_sha256_1']=dh_sha256_1
-        report['dh_sha256_2']=dh_sha256_2
-        report['dh_sha256']=dh_sha256
-        report['dh_fields']=dh_fields
+            dh_sha256_1, dh_tlsh_1, dh_sha256_2, dh_tlsh_2, dh_sha256, dh_fields=self.get_dos_header_features()
+            report['has_dos_header_1']=dh_sha256_1!=sha256().hexdigest()
+            report['has_dos_header_2']=dh_sha256_2!=sha256().hexdigest()
+            report['dh_sha256_1']=dh_sha256_1
+            report['dh_sha256_2']=dh_sha256_2
+            report['dh_sha256']=dh_sha256
+            report['dh_fields']=dh_fields
+            report['dh_tlsh_1']=dh_tlsh_1
+            report['dh_tlsh_2']=dh_tlsh_2
+            report['dh_tlsh']=PEDiff.tlsh_diff(dh_tlsh_1, dh_tlsh_2)
 
-        ds1, ds2, ds_sha256=self.get_dos_stub_features()
-        report['has_dos_stub_1']=ds1!=sha256().hexdigest()
-        report['has_dos_stub_2']=ds2!=sha256().hexdigest()
-        report['ds_sha256_1']=ds1
-        report['ds_sha256_2']=ds2
-        report['ds_sha256']=ds_sha256
+            ds1, ds_tlsh_1, ds2, ds_tlsh_2, ds_sha256=self.get_dos_stub_features()
+            report['has_dos_stub_1']=ds1!=sha256().hexdigest()
+            report['has_dos_stub_2']=ds2!=sha256().hexdigest()
+            report['ds_sha256_1']=ds1
+            report['ds_sha256_2']=ds2
+            report['ds_sha256']=ds_sha256
+            report['ds_tlsh_1']=ds_tlsh_1
+            report['ds_tlsh_2']=ds_tlsh_2
+            report['ds_tlsh']=PEDiff.tlsh_diff(ds_tlsh_1, ds_tlsh_2)
 
-        rh1, rh2, rh_sha256=self.get_rh_sha256_similarity()
-        report['has_rich_header_1']=rh1!=sha256().hexdigest()
-        report['has_rich_header_2']=rh2!=sha256().hexdigest()
-        report['rh_sha256_1']=rh1
-        report['rh_sha256_2']=rh2
-        report['rh_sha256']=rh_sha256
+            rh1, rh_tlsh_1, rh2, rh_tlsh_2, rh_sha256=self.get_rh_sha256_similarity()
+            report['has_rich_header_1']=rh1!=sha256().hexdigest()
+            report['has_rich_header_2']=rh2!=sha256().hexdigest()
+            report['rh_sha256_1']=rh1
+            report['rh_sha256_2']=rh2
+            report['rh_sha256']=rh_sha256
 
-        rh_ids, rh_counts=self.get_rh_ids_counts_similarity()
-        report['rh_ids']=rh_ids
-        report['rh_counts']=rh_counts
+            rh_ids, rh_counts=self.get_rh_ids_counts_similarity()
+            report['rh_ids']=rh_ids
+            report['rh_counts']=rh_counts
 
-        ch1, ch2, ch_sha256=self.get_ch_sha256_similarity()
-        report['has_coff_header_1']=ch1!=sha256().hexdigest()
-        report['has_coff_header_2']=ch2!=sha256().hexdigest()
-        report['ch_sha256_1']=ch1
-        report['ch_sha256_2']=ch2
-        report['ch_sha256']=ch_sha256
+            report['rh_tlsh_1']=rh_tlsh_1
+            report['rh_tlsh_2']=rh_tlsh_2
+            report['rh_tlsh']=PEDiff.tlsh_diff(rh_tlsh_1, rh_tlsh_2)
 
-        report['ch_fields']=self.get_ch_fields_similarity()
-        
-        oh1, oh2, oh_sha256=self.get_oh_sha256_similarity()
-        report['has_optional_header_1']=oh1!=sha256().hexdigest()
-        report['has_optional_header_2']=oh2!=sha256().hexdigest()
-        report['oh_sha256_1']=oh1
-        report['oh_sha256_2']=oh2
-        report['oh_sha256']=oh_sha256
+            ch1, ch_tlsh_1, ch2, ch_tlsh_2, ch_sha256=self.get_ch_sha256_similarity()
+            report['has_coff_header_1']=ch1!=sha256().hexdigest()
+            report['has_coff_header_2']=ch2!=sha256().hexdigest()
+            report['ch_sha256_1']=ch1
+            report['ch_sha256_2']=ch2
+            report['ch_sha256']=ch_sha256        
 
-        report['oh_fields']=self.get_oh_fields_similarity()
+            report['ch_fields']=self.get_ch_fields_similarity()
+            
+            report['ch_tlsh_1']=ch_tlsh_1
+            report['ch_tlsh_2']=ch_tlsh_2
+            report['ch_tlsh']=PEDiff.tlsh_diff(ch_tlsh_1, ch_tlsh_2)
 
-        dd1, dd2, dd_sha256=self.get_dd_sha256_similarity()
-        report['has_data_directories_1']=dd1!=sha256().hexdigest()
-        report['has_data_directories_2']=dd2!=sha256().hexdigest()
-        report['dd_sha256_1']=dd1
-        report['dd_sha256_2']=dd2
-        report['dd_sha256']=dd_sha256
+            oh1, oh_tlsh_1, oh2, oh_tlsh_2, oh_sha256=self.get_oh_sha256_similarity()
+            report['has_optional_header_1']=oh1!=sha256().hexdigest()
+            report['has_optional_header_2']=oh2!=sha256().hexdigest()
+            report['oh_sha256_1']=oh1
+            report['oh_sha256_2']=oh2
+            report['oh_sha256']=oh_sha256
 
-        report['dd_fields']=self.get_dd_fields_similarity()
+            report['oh_fields']=self.get_oh_fields_similarity()
 
-        st1, st2, st_sha256=self.get_st_sha256_similarity()
-        report['has_section_table_1']=st1!=sha256().hexdigest()
-        report['has_section_table_2']=st2!=sha256().hexdigest()
-        report['st_sha256_1']=st1
-        report['st_sha256_2']=st2
-        report['st_sha256']=st_sha256
+            report['oh_tlsh_1']=oh_tlsh_1
+            report['oh_tlsh_2']=oh_tlsh_2
+            report['oh_tlsh']=PEDiff.tlsh_diff(oh_tlsh_1, oh_tlsh_2)
 
-        st_sorted_names1, st_sorted_names2, st_section_names, st_sorted_names=self.get_st_sorted_sections_names_sha256_similarity()
-        report['st_sorted_names_sha256_1']=st_sorted_names1
-        report['st_sorted_names_sha256_2']=st_sorted_names2
-        report['st_sections_names_sha256']=st_section_names
-        report['st_sorted_names_sha256']=st_sorted_names
+            dd1, dd_tlsh_1, dd2, dd_tlsh_2, dd_sha256=self.get_dd_sha256_similarity()
+            report['has_data_directories_1']=dd1!=sha256().hexdigest()
+            report['has_data_directories_2']=dd2!=sha256().hexdigest()
+            report['dd_sha256_1']=dd1
+            report['dd_sha256_2']=dd2
+            report['dd_sha256']=dd_sha256
 
-        pe1=pefile.PE(self.samplepath1, fast_load=True)
-        pe2=pefile.PE(self.samplepath2, fast_load=True)
-        aep1=pe1.OPTIONAL_HEADER.AddressOfEntryPoint
-        aep2=pe1.OPTIONAL_HEADER.AddressOfEntryPoint
-        pe1.close()
-        pe2.close()
-        es_sha256_1, es_loaded_sha256_1, es_padding_sha256_1, es_nostrings_sha256_1=PEDiff.get_section_features(self.samplepath1, aep1)
-        es_sha256_2, es_loaded_sha256_2, es_padding_sha256_2, es_nostrings_sha256_2=PEDiff.get_section_features(self.samplepath2, aep2)
-        report['has_entrypoint_section_1']=es_sha256_1!=sha256().hexdigest()
-        report['has_entrypoint_section_2']=es_sha256_2!=sha256().hexdigest()
-        report['es_sha256_1']=es_sha256_1
-        report['es_sha256_2']=es_sha256_2
-        report['es_loaded_sha256_1']=es_loaded_sha256_1
-        report['es_loaded_sha256_2']=es_loaded_sha256_2
-        report['es_padding_sha256_1']=es_padding_sha256_1
-        report['es_padding_sha256_2']=es_padding_sha256_2
-        report['es_nostrings_sha256_1']=es_nostrings_sha256_1
-        report['es_nostrings_sha256_2']=es_nostrings_sha256_2
-        report['es_sha256']=es_sha256_1==es_sha256_2
-        report['es_loaded_sha256']=es_loaded_sha256_1==es_loaded_sha256_2
-        report['es_padding_sha256']=es_padding_sha256_1==es_padding_sha256_2
-        report['es_nostrings_sha256']=es_nostrings_sha256_1==es_nostrings_sha256_2
+            report['dd_fields']=self.get_dd_fields_similarity()
 
-        pe1=pefile.PE(self.samplepath1, fast_load=True)
-        pe2=pefile.PE(self.samplepath2, fast_load=True)
-        r_va1=pe1.OPTIONAL_HEADER.DATA_DIRECTORY[2].VirtualAddress if len(pe1.OPTIONAL_HEADER.DATA_DIRECTORY)>2 else 0
-        r_va2=pe2.OPTIONAL_HEADER.DATA_DIRECTORY[2].VirtualAddress if len(pe2.OPTIONAL_HEADER.DATA_DIRECTORY)>2 else 0
-        pe1.close()
-        pe2.close()
-        rs_sha256_1, rs_loaded_sha256_1, rs_padding_sha256_1, rs_nostrings_sha256_1=PEDiff.get_section_features(self.samplepath1, r_va1)
-        rs_sha256_2, rs_loaded_sha256_2, rs_padding_sha256_2, rs_nostrings_sha256_2=PEDiff.get_section_features(self.samplepath2, r_va2)
-        rs_resources_sha256_1, rs_resources_sha256_2, rs_resources_sha256, rs_resources_names, rs_resources_values=self.get_resources_features()
-        report['has_resource_section_1']=rs_sha256_1!=sha256().hexdigest()
-        report['has_resource_section_2']=rs_sha256_2!=sha256().hexdigest()
-        report['rs_sha256_1']=rs_sha256_1
-        report['rs_sha256_2']=rs_sha256_2
-        report['rs_loaded_sha256_1']=rs_loaded_sha256_1
-        report['rs_loaded_sha256_2']=rs_loaded_sha256_2
-        report['rs_padding_sha256_1']=rs_padding_sha256_1
-        report['rs_padding_sha256_2']=rs_padding_sha256_2
-        report['rs_nostrings_sha256_1']=rs_nostrings_sha256_1
-        report['rs_nostrings_sha256_2']=rs_nostrings_sha256_2
-        report['rs_sha256']=rs_sha256_1==rs_sha256_2
-        report['rs_loaded_sha256']=rs_loaded_sha256_1==rs_loaded_sha256_2
-        report['rs_padding_sha256']=rs_padding_sha256_1==rs_padding_sha256_2
-        report['rs_nostrings_sha256']=rs_nostrings_sha256_1==rs_nostrings_sha256_2
-        report['rs_resources_sha256_1']=rs_resources_sha256_1
-        report['rs_resources_sha256_2']=rs_resources_sha256_2
-        report['rs_resources_sha256']=rs_resources_sha256
-        report['rs_resources_names']=rs_resources_names
-        report['rs_resources_values']=rs_resources_values
+            report['dd_tlsh_1']=dd_tlsh_1
+            report['dd_tlsh_2']=dd_tlsh_2
+            report['dd_tlsh']=PEDiff.tlsh_diff(dd_tlsh_1, dd_tlsh_2)
 
-        os_sorted_sections_sha256_1, os_sorted_sections_sha256_2, os_sorted_sections_sha256, os_sections, os_sections_loaded, os_sections_padding, os_sections_nostrings, os_sorted_names_sha256_1, os_sorted_names_sha256_2, os_sorted_names_sha256=self.get_other_sections_features()
-        report['has_other_sections_1']=os_sorted_sections_sha256_1!=sha256().hexdigest()
-        report['has_other_sections_2']=os_sorted_sections_sha256_2!=sha256().hexdigest()
-        report['os_sorted_sections_sha256_1']=os_sorted_sections_sha256_1
-        report['os_sorted_sections_sha256_2']=os_sorted_sections_sha256_2
-        report['os_sorted_sections_sha256']=os_sorted_sections_sha256
-        report['os_sections']=os_sections
-        report['os_sections_loaded']=os_sections_loaded
-        report['os_sections_padding']=os_sections_padding
-        report['os_sections_nostrings']=os_sections_nostrings
-        report['os_sorted_names_sha256_1']=os_sorted_names_sha256_1
-        report['os_sorted_names_sha256_2']=os_sorted_names_sha256_2
-        report['os_sorted_names_sha256']=os_sorted_names_sha256
+            st1, st_tlsh_1, st2, st_tlsh_2, st_sha256=self.get_st_sha256_similarity()
+            report['has_section_table_1']=st1!=sha256().hexdigest()
+            report['has_section_table_2']=st2!=sha256().hexdigest()
+            report['st_sha256_1']=st1
+            report['st_sha256_2']=st2
+            report['st_sha256']=st_sha256
 
-        ct_sha256_1, ct_sha256_2, ct_sha256, ct_entries, ct_pkcs7, ct_subjects, ct_issuers, ct_authentihash=self.get_certificate_table_features()
-        real_authentihash_1=PEDiff.compute_authentihash(self.samplepath1)
-        real_authentihash_2=PEDiff.compute_authentihash(self.samplepath2)
-        report['has_certificate_table_1']=ct_sha256_1!=sha256().hexdigest()
-        report['has_certificate_table_2']=ct_sha256_2!=sha256().hexdigest()
-        report['ct_sha256_1']=ct_sha256_1
-        report['ct_sha256_2']=ct_sha256_2
-        report['ct_sha256']=ct_sha256
-        report['ct_entries']=ct_entries
-        report['ct_pkcs7']=ct_pkcs7
-        report['ct_subjects']=ct_subjects
-        report['ct_issuers']=ct_issuers
-        report['ct_authentihash']=ct_authentihash
-        report['real_authentihash_1']=real_authentihash_1
-        report['real_authentihash_2']=real_authentihash_2
-        report['real_authentihash_match']=real_authentihash_1==real_authentihash_2
+            st_sorted_names1, st_sorted_names2, st_section_names, st_sorted_names=self.get_st_sorted_sections_names_sha256_similarity()
+            report['st_sorted_names_sha256_1']=st_sorted_names1
+            report['st_sorted_names_sha256_2']=st_sorted_names2
+            report['st_sections_names_sha256']=st_section_names
+            report['st_sorted_names_sha256']=st_sorted_names
 
-        ov_sha256_1, ov_sha256_2, ov_sha256, ov_nostrings_sha256_1, ov_nostrings_sha256_2, ov_nostrings_sha256, no_overlay_sha256_1, no_overlay_sha256_2, no_overlay_sha256=self.get_overlay_features()
-        report['has_overlay_1']=ov_sha256_1!=sha256().hexdigest()
-        report['has_overlay_2']=ov_sha256_2!=sha256().hexdigest()
-        report['ov_sha256_1']=ov_sha256_1
-        report['ov_sha256_2']=ov_sha256_2
-        report['ov_sha256']=ov_sha256
-        report['ov_nostrings_sha256_1']=ov_nostrings_sha256_1
-        report['ov_nostrings_sha256_2']=ov_nostrings_sha256_2
-        report['ov_nostrings_sha256']=ov_nostrings_sha256
-        report['no_overlay_sha256_1']=no_overlay_sha256_1
-        report['no_overlay_sha256_2']=no_overlay_sha256_2
-        report['no_overlay_sha256']=no_overlay_sha256
+            report['st_tlsh_1']=st_tlsh_1
+            report['st_tlsh_2']=st_tlsh_2
+            report['st_tlsh']=PEDiff.tlsh_diff(st_tlsh_1, st_tlsh_2)
 
+            pe1=pefile.PE(self.samplepath1, fast_load=True)
+            pe2=pefile.PE(self.samplepath2, fast_load=True)
+            aep1=pe1.OPTIONAL_HEADER.AddressOfEntryPoint
+            aep2=pe1.OPTIONAL_HEADER.AddressOfEntryPoint
+            pe1.close()
+            pe2.close()
+            es_sha256_1, es_tlsh_1, es_loaded_sha256_1, es_padding_sha256_1, es_nostrings_sha256_1=PEDiff.get_section_features(self.samplepath1, aep1)
+            es_sha256_2, es_tlsh_2, es_loaded_sha256_2, es_padding_sha256_2, es_nostrings_sha256_2=PEDiff.get_section_features(self.samplepath2, aep2)
+            report['has_entrypoint_section_1']=es_sha256_1!=sha256().hexdigest()
+            report['has_entrypoint_section_2']=es_sha256_2!=sha256().hexdigest()
+            report['es_sha256_1']=es_sha256_1
+            report['es_sha256_2']=es_sha256_2
+            report['es_loaded_sha256_1']=es_loaded_sha256_1
+            report['es_loaded_sha256_2']=es_loaded_sha256_2
+            report['es_padding_sha256_1']=es_padding_sha256_1
+            report['es_padding_sha256_2']=es_padding_sha256_2
+            report['es_nostrings_sha256_1']=es_nostrings_sha256_1
+            report['es_nostrings_sha256_2']=es_nostrings_sha256_2
+            report['es_sha256']=es_sha256_1==es_sha256_2
+            report['es_loaded_sha256']=es_loaded_sha256_1==es_loaded_sha256_2
+            report['es_padding_sha256']=es_padding_sha256_1==es_padding_sha256_2
+            report['es_nostrings_sha256']=es_nostrings_sha256_1==es_nostrings_sha256_2
+            report['es_tlsh_1']=es_tlsh_1
+            report['es_tlsh_2']=es_tlsh_2
+            report['es_tlsh']=PEDiff.tlsh_diff(es_tlsh_1, es_tlsh_2)        
+
+            pe1=pefile.PE(self.samplepath1, fast_load=True)
+            pe2=pefile.PE(self.samplepath2, fast_load=True)
+            r_va1=pe1.OPTIONAL_HEADER.DATA_DIRECTORY[2].VirtualAddress if len(pe1.OPTIONAL_HEADER.DATA_DIRECTORY)>2 else 0
+            r_va2=pe2.OPTIONAL_HEADER.DATA_DIRECTORY[2].VirtualAddress if len(pe2.OPTIONAL_HEADER.DATA_DIRECTORY)>2 else 0
+            pe1.close()
+            pe2.close()
+            rs_sha256_1, rs_tlsh_1, rs_loaded_sha256_1, rs_padding_sha256_1, rs_nostrings_sha256_1=PEDiff.get_section_features(self.samplepath1, r_va1)
+            rs_sha256_2, rs_tlsh_2, rs_loaded_sha256_2, rs_padding_sha256_2, rs_nostrings_sha256_2=PEDiff.get_section_features(self.samplepath2, r_va2)
+            rs_resources_sha256_1, rs_resources_sha256_2, rs_resources_sha256, rs_resources_names, rs_resources_values=self.get_resources_features()
+            report['has_resource_section_1']=rs_sha256_1!=sha256().hexdigest()
+            report['has_resource_section_2']=rs_sha256_2!=sha256().hexdigest()
+            report['rs_sha256_1']=rs_sha256_1
+            report['rs_sha256_2']=rs_sha256_2
+            report['rs_loaded_sha256_1']=rs_loaded_sha256_1
+            report['rs_loaded_sha256_2']=rs_loaded_sha256_2
+            report['rs_padding_sha256_1']=rs_padding_sha256_1
+            report['rs_padding_sha256_2']=rs_padding_sha256_2
+            report['rs_nostrings_sha256_1']=rs_nostrings_sha256_1
+            report['rs_nostrings_sha256_2']=rs_nostrings_sha256_2
+            report['rs_sha256']=rs_sha256_1==rs_sha256_2
+            report['rs_loaded_sha256']=rs_loaded_sha256_1==rs_loaded_sha256_2
+            report['rs_padding_sha256']=rs_padding_sha256_1==rs_padding_sha256_2
+            report['rs_nostrings_sha256']=rs_nostrings_sha256_1==rs_nostrings_sha256_2
+            report['rs_resources_sha256_1']=rs_resources_sha256_1
+            report['rs_resources_sha256_2']=rs_resources_sha256_2
+            report['rs_resources_sha256']=rs_resources_sha256
+            report['rs_resources_names']=rs_resources_names
+            report['rs_resources_values']=rs_resources_values
+            report['rs_tlsh_1']=rs_tlsh_1
+            report['rs_tlsh_2']=rs_tlsh_2
+            report['rs_tlsh']=PEDiff.tlsh_diff(rs_tlsh_1, rs_tlsh_2)
+
+            os_sorted_sections_sha256_1, os_tlsh_1, os_sorted_sections_sha256_2, os_tlsh_2, os_sorted_sections_sha256, os_sections, os_sections_loaded, os_sections_padding, os_sections_nostrings, os_sorted_names_sha256_1, os_sorted_names_sha256_2, os_sorted_names_sha256=self.get_other_sections_features()
+            report['has_other_sections_1']=os_sorted_sections_sha256_1!=sha256().hexdigest()
+            report['has_other_sections_2']=os_sorted_sections_sha256_2!=sha256().hexdigest()
+            report['os_sorted_sections_sha256_1']=os_sorted_sections_sha256_1
+            report['os_sorted_sections_sha256_2']=os_sorted_sections_sha256_2
+            report['os_sorted_sections_sha256']=os_sorted_sections_sha256
+            report['os_sections']=os_sections
+            report['os_sections_loaded']=os_sections_loaded
+            report['os_sections_padding']=os_sections_padding
+            report['os_sections_nostrings']=os_sections_nostrings
+            report['os_sorted_names_sha256_1']=os_sorted_names_sha256_1
+            report['os_sorted_names_sha256_2']=os_sorted_names_sha256_2
+            report['os_sorted_names_sha256']=os_sorted_names_sha256
+            report['os_tlsh_1']=os_tlsh_1
+            report['os_tlsh_2']=os_tlsh_2
+            report['os_tlsh']=PEDiff.tlsh_diff(os_tlsh_1, os_tlsh_2)
+
+            ct_sha256_1, ct_tlsh_1, ct_sha256_2, ct_tlsh_2, ct_sha256, ct_entries, ct_pkcs7, ct_subjects, ct_issuers, ct_authentihash=self.get_certificate_table_features()
+            real_authentihash_1=PEDiff.compute_authentihash(self.samplepath1)
+            real_authentihash_2=PEDiff.compute_authentihash(self.samplepath2)
+            report['has_certificate_table_1']=ct_sha256_1!=sha256().hexdigest()
+            report['has_certificate_table_2']=ct_sha256_2!=sha256().hexdigest()
+            report['ct_sha256_1']=ct_sha256_1
+            report['ct_sha256_2']=ct_sha256_2
+            report['ct_sha256']=ct_sha256
+            report['ct_entries']=ct_entries
+            report['ct_pkcs7']=ct_pkcs7
+            report['ct_subjects']=ct_subjects
+            report['ct_issuers']=ct_issuers
+            report['ct_authentihash']=ct_authentihash
+            report['real_authentihash_1']=real_authentihash_1
+            report['real_authentihash_2']=real_authentihash_2
+            report['real_authentihash_match']=real_authentihash_1==real_authentihash_2
+            report['ct_tlsh_1']=ct_tlsh_1
+            report['ct_tlsh_2']=ct_tlsh_2
+            report['ct_tlsh']=PEDiff.tlsh_diff(ct_tlsh_1, ct_tlsh_2)
+
+            ov_sha256_1, ov_tlsh_1, ov_sha256_2, ov_tlsh_2, ov_sha256, ov_nostrings_sha256_1, ov_nostrings_sha256_2, ov_nostrings_sha256, no_overlay_sha256_1, no_overlay_sha256_2, no_overlay_sha256=self.get_overlay_features()
+            report['has_overlay_1']=ov_sha256_1!=sha256().hexdigest()
+            report['has_overlay_2']=ov_sha256_2!=sha256().hexdigest()
+            report['ov_sha256_1']=ov_sha256_1
+            report['ov_sha256_2']=ov_sha256_2
+            report['ov_sha256']=ov_sha256
+            report['ov_nostrings_sha256_1']=ov_nostrings_sha256_1
+            report['ov_nostrings_sha256_2']=ov_nostrings_sha256_2
+            report['ov_nostrings_sha256']=ov_nostrings_sha256
+            report['no_overlay_sha256_1']=no_overlay_sha256_1
+            report['no_overlay_sha256_2']=no_overlay_sha256_2
+            report['no_overlay_sha256']=no_overlay_sha256
+            report['ov_tlsh_1']=ov_tlsh_1
+            report['ov_tlsh_2']=ov_tlsh_2
+            report['ov_tlsh']=PEDiff.tlsh_diff(ov_tlsh_1, ov_tlsh_2)
+
+        else:
+            
+            dh_sha256_1, dh_tlsh_1=PEDiff.get_dos_header_sha256(self.samplepath1)
+            dh_sha256_2, dh_tlsh_2=PEDiff.get_dos_header_sha256(self.samplepath2)
+            report['has_dos_header_1']=dh_sha256_1!=sha256().hexdigest()
+            report['has_dos_header_2']=dh_sha256_2!=sha256().hexdigest()
+            report['dh_sha256_1']=dh_sha256_1
+            report['dh_sha256_2']=dh_sha256_2
+            report['dh_tlsh_1']=dh_tlsh_1
+            report['dh_tlsh_2']=dh_tlsh_2
+            report['dh_tlsh']=PEDiff.tlsh_diff(dh_tlsh_1, dh_tlsh_2)
+
+            ds1, ds_tlsh_1, ds2, ds_tlsh_2, ds_sha256=self.get_dos_stub_features()
+            report['has_dos_stub_1']=ds1!=sha256().hexdigest()
+            report['has_dos_stub_2']=ds2!=sha256().hexdigest()
+            report['ds_sha256_1']=ds1
+            report['ds_sha256_2']=ds2
+            report['ds_sha256']=ds_sha256
+            report['ds_tlsh_1']=ds_tlsh_1
+            report['ds_tlsh_2']=ds_tlsh_2
+            report['ds_tlsh']=PEDiff.tlsh_diff(ds_tlsh_1, ds_tlsh_2)
+
+            rh1, rh_tlsh_1, rh2, rh_tlsh_2, rh_sha256=self.get_rh_sha256_similarity()
+            report['has_rich_header_1']=rh1!=sha256().hexdigest()
+            report['has_rich_header_2']=rh2!=sha256().hexdigest()
+            report['rh_sha256_1']=rh1
+            report['rh_sha256_2']=rh2
+            report['rh_sha256']=rh_sha256
+            report['rh_tlsh_1']=rh_tlsh_1
+            report['rh_tlsh_2']=rh_tlsh_2
+            report['rh_tlsh']=PEDiff.tlsh_diff(rh_tlsh_1, rh_tlsh_2)
+
+            ch1, ch_tlsh_1, ch2, ch_tlsh_2, ch_sha256=self.get_ch_sha256_similarity()
+            report['has_coff_header_1']=ch1!=sha256().hexdigest()
+            report['has_coff_header_2']=ch2!=sha256().hexdigest()
+            report['ch_sha256_1']=ch1
+            report['ch_sha256_2']=ch2
+            report['ch_sha256']=ch_sha256 
+            report['ch_tlsh_1']=ch_tlsh_1
+            report['ch_tlsh_2']=ch_tlsh_2
+            report['ch_tlsh']=PEDiff.tlsh_diff(ch_tlsh_1, ch_tlsh_2)
+
+            oh1, oh_tlsh_1, oh2, oh_tlsh_2, oh_sha256=self.get_oh_sha256_similarity()
+            report['has_optional_header_1']=oh1!=sha256().hexdigest()
+            report['has_optional_header_2']=oh2!=sha256().hexdigest()
+            report['oh_sha256_1']=oh1
+            report['oh_sha256_2']=oh2
+            report['oh_sha256']=oh_sha256
+            report['oh_tlsh_1']=oh_tlsh_1
+            report['oh_tlsh_2']=oh_tlsh_2
+            report['oh_tlsh']=PEDiff.tlsh_diff(oh_tlsh_1, oh_tlsh_2)
+
+            dd1, dd_tlsh_1, dd2, dd_tlsh_2, dd_sha256=self.get_dd_sha256_similarity()
+            report['has_data_directories_1']=dd1!=sha256().hexdigest()
+            report['has_data_directories_2']=dd2!=sha256().hexdigest()
+            report['dd_sha256_1']=dd1
+            report['dd_sha256_2']=dd2
+            report['dd_sha256']=dd_sha256
+            report['dd_tlsh_1']=dd_tlsh_1
+            report['dd_tlsh_2']=dd_tlsh_2
+            report['dd_tlsh']=PEDiff.tlsh_diff(dd_tlsh_1, dd_tlsh_2)
+
+            st1, st_tlsh_1, st2, st_tlsh_2, st_sha256=self.get_st_sha256_similarity()
+            report['has_section_table_1']=st1!=sha256().hexdigest()
+            report['has_section_table_2']=st2!=sha256().hexdigest()
+            report['st_sha256_1']=st1
+            report['st_sha256_2']=st2
+            report['st_sha256']=st_sha256
+            report['st_tlsh_1']=st_tlsh_1
+            report['st_tlsh_2']=st_tlsh_2
+            report['st_tlsh']=PEDiff.tlsh_diff(st_tlsh_1, st_tlsh_2)
+
+            pe1=pefile.PE(self.samplepath1, fast_load=True)
+            pe2=pefile.PE(self.samplepath2, fast_load=True)
+            aep1=pe1.OPTIONAL_HEADER.AddressOfEntryPoint
+            aep2=pe1.OPTIONAL_HEADER.AddressOfEntryPoint
+            pe1.close()
+            pe2.close()
+            es_sha256_1, es_tlsh_1, _, _, _=PEDiff.get_section_features(self.samplepath1, aep1, only_tlsh=True)
+            es_sha256_2, es_tlsh_2, _, _, _=PEDiff.get_section_features(self.samplepath2, aep2, only_tlsh=True)
+            report['has_entrypoint_section_1']=es_sha256_1!=sha256().hexdigest()
+            report['has_entrypoint_section_2']=es_sha256_2!=sha256().hexdigest()
+            report['es_sha256_1']=es_sha256_1
+            report['es_tlsh_1']=es_tlsh_1
+            report['es_tlsh_2']=es_tlsh_2
+            report['es_tlsh']=PEDiff.tlsh_diff(es_tlsh_1, es_tlsh_2)  
+
+            pe1=pefile.PE(self.samplepath1, fast_load=True)
+            pe2=pefile.PE(self.samplepath2, fast_load=True)
+            r_va1=pe1.OPTIONAL_HEADER.DATA_DIRECTORY[2].VirtualAddress if len(pe1.OPTIONAL_HEADER.DATA_DIRECTORY)>2 else 0
+            r_va2=pe2.OPTIONAL_HEADER.DATA_DIRECTORY[2].VirtualAddress if len(pe2.OPTIONAL_HEADER.DATA_DIRECTORY)>2 else 0
+            pe1.close()
+            pe2.close()
+            rs_sha256_1, rs_tlsh_1, _, _, _=PEDiff.get_section_features(self.samplepath1, r_va1)
+            rs_sha256_2, rs_tlsh_2, _, _, _=PEDiff.get_section_features(self.samplepath2, r_va2)
+            report['has_resource_section_1']=rs_sha256_1!=sha256().hexdigest()
+            report['has_resource_section_2']=rs_sha256_2!=sha256().hexdigest()
+            report['rs_sha256_1']=rs_sha256_1
+            report['rs_sha256_2']=rs_sha256_2
+            report['rs_sha256']=rs_sha256_1==rs_sha256_2
+            report['rs_tlsh_1']=rs_tlsh_1
+            report['rs_tlsh_2']=rs_tlsh_2
+            report['rs_tlsh']=PEDiff.tlsh_diff(rs_tlsh_1, rs_tlsh_2)
+
+            os_sorted_sections_sha256_1, os_tlsh_1, os_sorted_sections_sha256_2, os_tlsh_2=self.get_other_sections_features(only_tlsh=True)
+            report['has_other_sections_1']=os_sorted_sections_sha256_1!=sha256().hexdigest()
+            report['has_other_sections_2']=os_sorted_sections_sha256_2!=sha256().hexdigest()
+            report['os_sorted_sections_sha256_1']=os_sorted_sections_sha256_1
+            report['os_sorted_sections_sha256_2']=os_sorted_sections_sha256_2
+            report['os_sorted_sections_sha256']=os_sorted_sections_sha256_1==os_sorted_sections_sha256_2
+            report['os_tlsh_1']=os_tlsh_1
+            report['os_tlsh_2']=os_tlsh_2
+            report['os_tlsh']=PEDiff.tlsh_diff(os_tlsh_1, os_tlsh_2)
+
+            pe1=pefile.PE(self.samplepath1, fast_load=True)
+            pe2=pefile.PE(self.samplepath2, fast_load=True)
+            ct_sha256_1, ct_tlsh_1=PEDiff.get_ct_sha256(pe1)
+            ct_sha256_2, ct_tlsh_2=PEDiff.get_ct_sha256(pe2)
+            pe1.close()
+            pe2.close()
+            ct_sha256=ct_sha256_1==ct_sha256_2
+            report['has_certificate_table_1']=ct_sha256_1!=sha256().hexdigest()
+            report['has_certificate_table_2']=ct_sha256_2!=sha256().hexdigest()
+            report['ct_sha256_1']=ct_sha256_1
+            report['ct_sha256_2']=ct_sha256_2
+            report['ct_sha256']=ct_sha256
+            report['ct_tlsh_1']=ct_tlsh_1
+            report['ct_tlsh_2']=ct_tlsh_2
+            report['ct_tlsh']=PEDiff.tlsh_diff(ct_tlsh_1, ct_tlsh_2)
+
+            overlay1, _=PEDiff.get_overlay(self.samplepath1)
+            overlay2, _=PEDiff.get_overlay(self.samplepath2)
+            ov_sha256_1=sha256(overlay1).hexdigest()
+            ov_sha256_2=sha256(overlay2).hexdigest()
+            ov_tlsh_1=tlsh.hash(overlay1)
+            ov_tlsh_2=tlsh.hash(overlay2)
+            ov_sha256=ov_sha256_1==ov_sha256_2
+            report['has_overlay_1']=ov_sha256_1!=sha256().hexdigest()
+            report['has_overlay_2']=ov_sha256_2!=sha256().hexdigest()
+            report['ov_sha256_1']=ov_sha256_1
+            report['ov_sha256_2']=ov_sha256_2
+            report['ov_sha256']=ov_sha256
+            report['ov_tlsh_1']=ov_tlsh_1
+            report['ov_tlsh_2']=ov_tlsh_2
+            report['ov_tlsh']=PEDiff.tlsh_diff(ov_tlsh_1, ov_tlsh_2)
+
+        if print_results:
+            print('Feature\t\tResult')
+            for feature in MAIN_FEATURES:
+                if 'truncated' in feature:
+                    result=report[feature]
+                else:
+                    result='Equal' if report[feature]==True else ('Different' if report[feature]==False else report[feature])
+                print(feature, result, sep='\t')
+                if 'truncated' not in feature and 'exe' not in feature:
+                    feature=feature.split('_')[0]+'_tlsh'
+                    result=report[feature]
+                    print(feature, result, sep='\t\t')
         return report
 
-def compare_executables(EXE_1, EXE_2):
+def compare_executables(EXE_1, EXE_2, only_tlsh, print_results):
     pair=PEDiff(EXE_1, EXE_2)
-    report=pair.get_report()
+    report=pair.get_report(only_tlsh=only_tlsh, print_results=print_results)
     return report
 
 def dispatch_pair(args):
     return compare_executables(*args)
 
-def compare_directory(DIR, processes):
+def compare_directory(DIR, processes, only_tlsh):
     EXEs=os.listdir(DIR)
-    pairs=[(os.path.join(DIR, exe1), os.path.join(DIR, exe2)) for i, exe1 in enumerate(EXEs[:-1]) for exe2 in EXEs[i+1:]]
+    pairs=[(os.path.join(DIR, exe1), os.path.join(DIR, exe2), only_tlsh) for i, exe1 in enumerate(EXEs[:-1]) for exe2 in EXEs[i+1:]]
     with Pool(processes) as pool:
         reports=list(tqdm(pool.imap(dispatch_pair, pairs), total=len(pairs)))
     return reports
@@ -864,6 +1090,8 @@ def main():
     target_type.add_argument('-f', '--files', help='compare the pair of files EXE_1 and EXE_2', nargs=2, metavar=('EXE_1', 'EXE_2'))
     target_type.add_argument('-d', '--directory', help='compare ALL the files inside the directory DIR', metavar=('DIR'), type=str)
     parser.add_argument('-p', '--processes', required='--directory' in sys.argv or '-d' in sys.argv, help='number of processes used in directory mode (default: 1)', type=int, default=1)
+    parser.add_argument('--tlsh-only', action='store_true', help='Run only TLSH on the components')
+    parser.add_argument('--print', action='store_true', help='Print the results of the comparison')
 
     weights_group=parser.add_argument_group('FUS weights for fuzzy hashes\' scores')
     for fuzzy, weight in WEIGHTS.items():
@@ -889,9 +1117,9 @@ def main():
             BITSHRED_SETTING[option]=value
 
     if args.files:
-        report=[compare_executables(args.files[0], args.files[1])]
+        report=[compare_executables(args.files[0], args.files[1], args.tlsh_only, args.print)]
     elif args.directory:
-        report=compare_directory(args.directory, args.processes)
+        report=compare_directory(args.directory, args.processes, args.tlsh_only)
     df=pd.DataFrame(report)
     df.to_csv(args.output, index=False)
 

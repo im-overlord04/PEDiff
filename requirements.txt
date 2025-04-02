@@ -2,3 +2,4 @@ lief==0.14.1
 argparse==1.4.0
 pandas==2.2.2
 tqdm==2.2.3
+py-tlsh==4.7.2
