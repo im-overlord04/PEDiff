@@ -540,7 +540,7 @@ class PEDiff:
     def get_ct_sha256(pe):
         ct_offset=pe.OPTIONAL_HEADER.DATA_DIRECTORY[4].VirtualAddress if len(pe.OPTIONAL_HEADER.DATA_DIRECTORY)>4 else 0
         ct_size=pe.OPTIONAL_HEADER.DATA_DIRECTORY[4].Size if len(pe.OPTIONAL_HEADER.DATA_DIRECTORY)>4 else 0
-        data=pe.get_data()[ct_offset:ct_offset+ct_size]
+        data=pe.__data__[ct_offset:ct_offset+ct_size]
         ct_sha256=sha256(data).hexdigest()
         return ct_sha256, tlsh.hash(data)
     
