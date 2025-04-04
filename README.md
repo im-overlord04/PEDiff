@@ -27,4 +27,4 @@ A comparison between two features where at least one of them is TNULL results in
 
 The option `--print` eventually prints in stdout the results of the comparison. In case of the option `--directory` is specified, the comparisons are aggregated as it follows:
 - if the compared feature is a hash, it prints the percentage of matching comparisons;
-- it is TLSH, the failed comparisons are filtered out (i.e. comparisons with distance -1) and the mean value of the remaining ones is shown (in case all the comparisons failed, -1 is the assigned value)
+- if it is TLSH, the failed comparisons are filtered out (i.e. comparisons with distance -1) and the mean value of the remaining ones is shown (in case all the comparisons failed, -1 is the assigned value)
