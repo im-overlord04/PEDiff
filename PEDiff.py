@@ -343,7 +343,7 @@ class PEDiff:
     
     def get_section_table_sha256(path):
         pe=pefile.PE(path, fast_load=True)
-        section_table_start_offset=pe.OPTIONAL_HEADER.get_file_offset()+96+len(pe.OPTIONAL_HEADER.DATA_DIRECTORY)*8
+        section_table_start_offset=min(sec.get_file_offset() for sec in pe.sections)
         section_table_size=len(pe.sections)*40
         section_table_bytes=pe.__data__[section_table_start_offset:section_table_start_offset+section_table_size]
         return sha256(section_table_bytes).hexdigest(), tlsh.hash(section_table_bytes)
@@ -371,7 +371,8 @@ class PEDiff:
         for section in pe.sections:
             start=section.VirtualAddress
             end=start+section.Misc_VirtualSize
-            if address>=start and address<end:
+            raw_size=section.SizeOfRawData
+            if address>=start and address<end and raw_size>0:
                 return section
         return None
     
@@ -900,6 +901,11 @@ class PEDiff:
             report['ov_tlsh']=PEDiff.tlsh_diff(ov_tlsh_1, ov_tlsh_2)
 
         else:
+
+            is_truncated, max_section_offset, file_size=PEDiff.get_truncated(self.samplepath1)
+            report['is_truncated_1']=is_truncated
+            is_truncated, max_section_offset, file_size=PEDiff.get_truncated(self.samplepath2)
+            report['is_truncated_2']=is_truncated
             
             dh_sha256_1, dh_tlsh_1=PEDiff.get_dos_header_sha256(self.samplepath1)
             dh_sha256_2, dh_tlsh_2=PEDiff.get_dos_header_sha256(self.samplepath2)
@@ -907,6 +913,7 @@ class PEDiff:
             report['has_dos_header_2']=dh_sha256_2!=sha256().hexdigest()
             report['dh_sha256_1']=dh_sha256_1
             report['dh_sha256_2']=dh_sha256_2
+            report['dh_sha256']=dh_sha256_1==dh_sha256_2
             report['dh_tlsh_1']=dh_tlsh_1
             report['dh_tlsh_2']=dh_tlsh_2
             report['dh_tlsh']=PEDiff.tlsh_diff(dh_tlsh_1, dh_tlsh_2)
@@ -982,6 +989,8 @@ class PEDiff:
             report['has_entrypoint_section_1']=es_sha256_1!=sha256().hexdigest()
             report['has_entrypoint_section_2']=es_sha256_2!=sha256().hexdigest()
             report['es_sha256_1']=es_sha256_1
+            report['es_sha256_2']=es_sha256_2
+            report['es_sha256']=es_sha256_1==es_sha256_2
             report['es_tlsh_1']=es_tlsh_1
             report['es_tlsh_2']=es_tlsh_2
             report['es_tlsh']=PEDiff.tlsh_diff(es_tlsh_1, es_tlsh_2)  
