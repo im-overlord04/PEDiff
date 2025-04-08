@@ -792,7 +792,7 @@ class PEDiff:
             pe1=pefile.PE(self.samplepath1, fast_load=True)
             pe2=pefile.PE(self.samplepath2, fast_load=True)
             aep1=pe1.OPTIONAL_HEADER.AddressOfEntryPoint
-            aep2=pe1.OPTIONAL_HEADER.AddressOfEntryPoint
+            aep2=pe2.OPTIONAL_HEADER.AddressOfEntryPoint
             pe1.close()
             pe2.close()
             es_sha256_1, es_tlsh_1, es_loaded_sha256_1, es_padding_sha256_1, es_nostrings_sha256_1=PEDiff.get_section_features(self.samplepath1, aep1)
@@ -981,7 +981,7 @@ class PEDiff:
             pe1=pefile.PE(self.samplepath1, fast_load=True)
             pe2=pefile.PE(self.samplepath2, fast_load=True)
             aep1=pe1.OPTIONAL_HEADER.AddressOfEntryPoint
-            aep2=pe1.OPTIONAL_HEADER.AddressOfEntryPoint
+            aep2=pe2.OPTIONAL_HEADER.AddressOfEntryPoint
             pe1.close()
             pe2.close()
             es_sha256_1, es_tlsh_1, _, _, _=PEDiff.get_section_features(self.samplepath1, aep1, only_tlsh=True)
