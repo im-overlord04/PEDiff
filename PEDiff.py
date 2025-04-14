@@ -395,7 +395,7 @@ class PEDiff:
         data=PEDiff.replace_printable_wide_strings(data)
         return data
 
-    def get_section_features(path, va, only_tlsh=False):
+    def get_section_features(path, va, main_only=False):
         pe=pefile.PE(path, fast_load=True)
         section=PEDiff.get_section_containing_address(pe, va)
         if section==None:
@@ -404,7 +404,7 @@ class PEDiff:
             return empty_sha, 'TNULL', empty_sha, empty_sha, empty_sha
         s_sha256=sha256(section.get_data()).hexdigest()
         s_tlsh=tlsh.hash(section.get_data())
-        if only_tlsh:
+        if main_only:
             return s_sha256, s_tlsh, '', '', ''
         loaded, padding=PEDiff.get_section_loaded_padding_bytes(section)
         s_loaded_sha256=sha256(loaded).hexdigest()
@@ -445,8 +445,8 @@ class PEDiff:
         else:
             resources2=PEDiff.get_resources(pe2)
 
-        rs_resources_sha256_1=sha256(b''.join(resources1.values())).hexdigest()
-        rs_resources_sha256_2=sha256(b''.join(resources2.values())).hexdigest()
+        rs_resources_sha256_1=sha256(''.join(resources1.keys()).encode()).hexdigest()
+        rs_resources_sha256_2=sha256(''.join(resources2.keys()).encode()).hexdigest()
         rs_resources_sha256=rs_resources_sha256_1==rs_resources_sha256_2
         names1=set(PEDiff.mangle_list(list(resources1.keys())))
         names2=set(PEDiff.mangle_list(list(resources2.keys())))
@@ -477,7 +477,7 @@ class PEDiff:
         names=[el[0] for el in names]
         return sections, names
     
-    def get_other_sections_features(self, only_tlsh=False):
+    def get_other_sections_features(self, main_only=False):
         pe1=pefile.PE(self.samplepath1, fast_load=True)
         pe2=pefile.PE(self.samplepath2, fast_load=True)
         sections1, names1=PEDiff.get_other_sections(pe1)
@@ -496,7 +496,7 @@ class PEDiff:
         os_sorted_sections_sha256_2=sha256(b''.join(sections2)).hexdigest()
         os_tlsh_2=tlsh.hash(data2)
 
-        if only_tlsh:
+        if main_only:
             return os_sorted_sections_sha256_1, os_tlsh_1, os_sorted_sections_sha256_2, os_tlsh_2 
 
         for section in pe1.sections:
@@ -672,12 +672,10 @@ class PEDiff:
     def tlsh_diff(tlsh1, tlsh2):
         return tlsh.diff(tlsh1, tlsh2) if tlsh1!='TNULL' and tlsh2!='TNULL' else -1
 
-    def get_report(self, family_1='', family_2='', only_tlsh=False):
+    def get_report(self, main_only=False):
         report={}
         report['exe_1']=os.path.basename(self.samplepath1)
         report['exe_2']=os.path.basename(self.samplepath2)
-        report['family_1']=family_1
-        report['family_2']=family_2
 
         #report['ssdeep']=self.get_ssdeep_score()
         #report['tlsh']=self.get_tlsh_score()
@@ -686,7 +684,7 @@ class PEDiff:
         #report['mrsh-v2']=self.get_mrsh_score()
         #report['FUS']=self.get_FUS_score(report)
 
-        if not only_tlsh:
+        if not main_only:
             is_truncated, max_section_offset, file_size=PEDiff.get_truncated(self.samplepath1)
             report['is_truncated_1']=is_truncated
             report['max_section_offset_1']=max_section_offset
@@ -782,7 +780,7 @@ class PEDiff:
             st_sorted_names1, st_sorted_names2, st_section_names, st_sorted_names=self.get_st_sorted_sections_names_sha256_similarity()
             report['st_sorted_names_sha256_1']=st_sorted_names1
             report['st_sorted_names_sha256_2']=st_sorted_names2
-            report['st_sections_names_sha256']=st_section_names
+            report['st_sections_names']=st_section_names
             report['st_sorted_names_sha256']=st_sorted_names
 
             report['st_tlsh_1']=st_tlsh_1
@@ -984,8 +982,8 @@ class PEDiff:
             aep2=pe2.OPTIONAL_HEADER.AddressOfEntryPoint
             pe1.close()
             pe2.close()
-            es_sha256_1, es_tlsh_1, _, _, _=PEDiff.get_section_features(self.samplepath1, aep1, only_tlsh=True)
-            es_sha256_2, es_tlsh_2, _, _, _=PEDiff.get_section_features(self.samplepath2, aep2, only_tlsh=True)
+            es_sha256_1, es_tlsh_1, _, _, _=PEDiff.get_section_features(self.samplepath1, aep1, main_only=True)
+            es_sha256_2, es_tlsh_2, _, _, _=PEDiff.get_section_features(self.samplepath2, aep2, main_only=True)
             report['has_entrypoint_section_1']=es_sha256_1!=sha256().hexdigest()
             report['has_entrypoint_section_2']=es_sha256_2!=sha256().hexdigest()
             report['es_sha256_1']=es_sha256_1
@@ -1012,7 +1010,7 @@ class PEDiff:
             report['rs_tlsh_2']=rs_tlsh_2
             report['rs_tlsh']=PEDiff.tlsh_diff(rs_tlsh_1, rs_tlsh_2)
 
-            os_sorted_sections_sha256_1, os_tlsh_1, os_sorted_sections_sha256_2, os_tlsh_2=self.get_other_sections_features(only_tlsh=True)
+            os_sorted_sections_sha256_1, os_tlsh_1, os_sorted_sections_sha256_2, os_tlsh_2=self.get_other_sections_features(main_only=True)
             report['has_other_sections_1']=os_sorted_sections_sha256_1!=sha256().hexdigest()
             report['has_other_sections_2']=os_sorted_sections_sha256_2!=sha256().hexdigest()
             report['os_sorted_sections_sha256_1']=os_sorted_sections_sha256_1
@@ -1056,17 +1054,17 @@ class PEDiff:
 
         return report
 
-def compare_executables(EXE_1, EXE_2, only_tlsh):
+def compare_executables(EXE_1, EXE_2, main_only):
     pair=PEDiff(EXE_1, EXE_2)
-    report=pair.get_report(only_tlsh=only_tlsh)
+    report=pair.get_report(main_only=main_only)
     return report
 
 def dispatch_pair(args):
     return compare_executables(*args)
 
-def compare_directory(DIR, processes, only_tlsh):
+def compare_directory(DIR, processes, main_only):
     EXEs=os.listdir(DIR)
-    pairs=[(os.path.join(DIR, exe1), os.path.join(DIR, exe2), only_tlsh) for i, exe1 in enumerate(EXEs[:-1]) for exe2 in EXEs[i+1:]]
+    pairs=[(os.path.join(DIR, exe1), os.path.join(DIR, exe2), main_only) for i, exe1 in enumerate(EXEs[:-1]) for exe2 in EXEs[i+1:]]
     with Pool(processes) as pool:
         reports=list(tqdm(pool.imap(dispatch_pair, pairs), total=len(pairs)))
     return reports
@@ -1087,36 +1085,36 @@ def main():
     target_type.add_argument('-f', '--files', help='compare the pair of files EXE_1 and EXE_2', nargs=2, metavar=('EXE_1', 'EXE_2'))
     target_type.add_argument('-d', '--directory', help='compare ALL the files inside the directory DIR', metavar=('DIR'), type=str)
     parser.add_argument('-p', '--processes', required='--directory' in sys.argv or '-d' in sys.argv, help='number of processes used in directory mode (default: 1)', type=int, default=1)
-    parser.add_argument('--tlsh-only', action='store_true', help='Run only TLSH on the components')
+    parser.add_argument('--main-only', action='store_true', help='Run only SHA256 and TLSH on the main components')
     parser.add_argument('--print', action='store_true', help='Print the results of the comparison')
 
-    weights_group=parser.add_argument_group('FUS weights for fuzzy hashes\' scores')
-    for fuzzy, weight in WEIGHTS.items():
-        weights_group.add_argument(f'--{fuzzy}', help=f'Set the weight for {fuzzy} score (default: {round(weight, 3)})', type=float, default=weight, metavar=('WEIGHT'))
-    bitshred_group=parser.add_argument_group('Bitshred settings')
-    for setting, value in BITSHRED_SETTING.items():
-        if setting=='all_sec':
-            continue
-        bitshred_group.add_argument(f'--{setting}', help=f'Bitshred parameter {setting} (default {value})', type=int, default=value, metavar='VALUE')
+    # weights_group=parser.add_argument_group('FUS weights for fuzzy hashes\' scores')
+    # for fuzzy, weight in WEIGHTS.items():
+    #     weights_group.add_argument(f'--{fuzzy}', help=f'Set the weight for {fuzzy} score (default: {round(weight, 3)})', type=float, default=weight, metavar=('WEIGHT'))
+    # bitshred_group=parser.add_argument_group('Bitshred settings')
+    # for setting, value in BITSHRED_SETTING.items():
+    #     if setting=='all_sec':
+    #         continue
+    #     bitshred_group.add_argument(f'--{setting}', help=f'Bitshred parameter {setting} (default {value})', type=int, default=value, metavar='VALUE')
 
     args = parser.parse_args()
 
-    for arg in weights_group._group_actions:
-        fuzzy=arg.dest
-        weight=getattr(args, fuzzy)
-        if weight is not None:
-            WEIGHTS[fuzzy.replace('_', '-')]=weight
+    # for arg in weights_group._group_actions:
+    #     fuzzy=arg.dest
+    #     weight=getattr(args, fuzzy)
+    #     if weight is not None:
+    #         WEIGHTS[fuzzy.replace('_', '-')]=weight
 
-    for arg in bitshred_group._group_actions:
-        option=arg.dest
-        value=getattr(args, option)
-        if value is not None:
-            BITSHRED_SETTING[option]=value
+    # for arg in bitshred_group._group_actions:
+    #     option=arg.dest
+    #     value=getattr(args, option)
+    #     if value is not None:
+    #         BITSHRED_SETTING[option]=value
 
     if args.files:
-        report=[compare_executables(args.files[0], args.files[1], args.tlsh_only)]
+        report=[compare_executables(args.files[0], args.files[1], args.main_only)]
     elif args.directory:
-        report=compare_directory(args.directory, args.processes, args.tlsh_only)
+        report=compare_directory(args.directory, args.processes, args.main_only)
     df=pd.DataFrame(report)
     df.to_csv(args.output, index=False)
     if args.print:
