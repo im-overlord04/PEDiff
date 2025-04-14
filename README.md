@@ -10,7 +10,7 @@ docker build . -t pediff
 
 ## Usage
 
-Since the tool is run through docker, we wrapped the command in the `run_pediff.sh` script:
+Since the tool is run through docker, the `run_pediff.sh` script wraps the actual command simplicity:
 ```bash
 ./run_pediff.sh MODE [OPTIONS]
 ```
