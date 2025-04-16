@@ -20,7 +20,7 @@ Since the tool is run through docker, the `run_pediff.sh` script wraps the actua
 ### Modes
 
 This group defines if the PEDiff should compare a single pair of executables or all the possible pairs of executables contained in a folder.
-They are mutually exclusive and at least one of them is required.
+The two modes are mutually exclusive and at least one of them is required.
 
 **Pair**
 
