@@ -36,6 +36,8 @@ The two modes are mutually exclusive and at least one of them is required.
 
 ### Options
 
+**-o path/to/output.csv**: output CSV file path
+
 **-p number_of_processes**: (valid only with -d) number of processes to use in Folder mode (default: 1)
 
 **--print**: prints in stdout the results of the comparison.
