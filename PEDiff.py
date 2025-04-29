@@ -778,8 +778,8 @@ class PEDiff:
             report['st_sha256']=st_sha256
 
             st_sorted_names1, st_sorted_names2, st_section_names, st_sorted_names=self.get_st_sorted_sections_names_sha256_similarity()
-            report['st_sorted_names_sha256_1']=st_sorted_names1
-            report['st_sorted_names_sha256_2']=st_sorted_names2
+            report['st_sorted_names_sha256_1']=sha256(st_sorted_names1).hexdigest()
+            report['st_sorted_names_sha256_2']=sha256(st_sorted_names2).hexdigest()
             report['st_sections_names']=st_section_names
             report['st_sorted_names_sha256']=st_sorted_names
 
